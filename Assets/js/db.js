@@ -5,6 +5,8 @@ let cloudSync = null;
 const makeId = () => globalThis.crypto?.randomUUID?.() ??
   `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
+export const isPaymentActive = (payment) => payment.status !== "CANCELLED";
+
 function deviceDateString() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -263,7 +265,7 @@ export const db = {
     if (!tenant) throw new Error("Data penyewa tidak ditemukan.");
     const unit = data.units.find((item) => item.id === tenant.unitId);
     if (!unit) throw new Error("Unit penyewa tidak ditemukan.");
-    const existing = data.payments.find((item) => item.tenantId === tenantId && item.dueDate === dueDate);
+    const existing = data.payments.find((item) => isPaymentActive(item) && item.tenantId === tenantId && item.dueDate === dueDate);
     if (existing) return existing;
     const payment = {
       id: makeId(),
@@ -278,6 +280,30 @@ export const db = {
     data.payments.push(payment);
     writeData(data);
     return payment;
+  },
+  cancelPayment(paymentId) {
+    const data = readData();
+    const payment = data.payments.find((item) => item.id === paymentId);
+    if (!payment) throw new Error("Transaksi pembayaran tidak ditemukan.");
+    if (!isPaymentActive(payment)) throw new Error("Transaksi pembayaran ini sudah dibatalkan.");
+
+    const paymentYear = Number(payment.date?.slice(0, 4));
+    if (data.archives.some((archive) =>
+      archive.year === paymentYear && Array.isArray(archive.transactions) &&
+      archive.transactions.some((transaction) => transaction.id === paymentId)
+    )) {
+      throw new Error("Pembayaran ini sudah masuk arsip tahunan dan tidak dapat dibatalkan.");
+    }
+
+    const cancelledPayment = {
+      ...payment,
+      status: "CANCELLED",
+      cancelledAt: new Date().toISOString(),
+      cancellationNote: "Dibatalkan oleh pengelola"
+    };
+    data.payments = data.payments.map((item) => item.id === paymentId ? cancelledPayment : item);
+    writeData(data);
+    return cancelledPayment;
   },
   createExpense(input) {
     const data = readData();
@@ -345,7 +371,9 @@ export const db = {
     const categories = new Map(data.categories.map((category) => [category.id, category]));
     const units = new Map(data.units.map((unit) => [unit.id, unit]));
     const tenants = new Map(data.tenants.map((tenant) => [tenant.id, tenant]));
-    const payments = data.payments.filter((payment) => payment.date?.startsWith(`${reportYear}-`));
+    const payments = data.payments.filter((payment) =>
+      isPaymentActive(payment) && payment.date?.startsWith(`${reportYear}-`)
+    );
     const expenses = data.expenses.filter((expense) => expense.date?.startsWith(`${reportYear}-`));
     const transactions = [
       ...payments.map((payment) => {

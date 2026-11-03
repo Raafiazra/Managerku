@@ -141,6 +141,9 @@ h2 { font: 700 14px Manrope, sans-serif; margin-bottom: 5px; letter-spacing: -.2
 .transaction-table td { border-top: 1px solid #f0f2f5; padding: 12px 9px; color: #536171; font-size: 11px; }
 .transaction-table td:first-child { color: #344151; font-weight: 600; }
 .transaction-type { color: #8994a1; }
+.transaction-row-cancelled td { color: #929daa; }
+.transaction-cancelled, .transaction-cancel-note { color: #a52e3e; font-size: 10px; }
+.transaction-cancel-note { margin-top: 4px; }
 .toast { position: fixed; right: 24px; bottom: 24px; background: #233044; color: white; padding: 12px 16px; border-radius: 8px; box-shadow: 0 8px 24px #17243b35; font-size: 12px; opacity: 0; transform: translateY(8px); pointer-events: none; transition: .2s ease; z-index: 20; max-width: 350px; }
 .toast.show { opacity: 1; transform: translateY(0); }
 .modal-backdrop { position: fixed; inset: 0; padding: 20px; background: #1d27364d; display: grid; place-items: center; z-index: 1000; overflow-y: auto; }

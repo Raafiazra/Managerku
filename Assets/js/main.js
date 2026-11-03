@@ -13,7 +13,7 @@ import {
   updatePassword,
   updateProfile
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { db, getCurrentAppDate, getLegacyData, setCloudSync, setUserStorageScope } from "./db.js";
+import { db, getCurrentAppDate, getLegacyData, isPaymentActive, setCloudSync, setUserStorageScope } from "./db.js";
 import { flushUserWrites, importUserData, loadUserData, saveUserData } from "./firestore.js";
 import { formatRupiah, getBillingMessage, getBillingStatus, getWhatsAppUrl } from "./billing.js";
 import { setupPasswordToggles } from "./password-toggle.js";
@@ -211,7 +211,7 @@ function tenantForUnit(data, unit) {
 
 function statusForUnit(data, unit, tenant) {
   if (!tenant) return { code: "VACANT", label: "KOSONG" };
-  return getBillingStatus(tenant, data.payments);
+  return getBillingStatus(tenant, data.payments.filter(isPaymentActive));
 }
 
 function statusText(status) {
@@ -264,7 +264,9 @@ function renderDashboard(data) {
   const propertyId = $("#dashboard-filter").value || "all";
   const units = filteredUnits(data, propertyId);
   const propertiesInScope = new Set(units.map((unit) => unit.propertyId));
-  const paidPayments = data.payments.filter((payment) => propertyId === "all" || payment.propertyId === propertyId);
+  const paidPayments = data.payments.filter((payment) =>
+    isPaymentActive(payment) && (propertyId === "all" || payment.propertyId === propertyId)
+  );
   const expenses = data.expenses.filter((expense) => expense.scope === "global" ? propertyId === "all" : propertyId === "all" || propertiesInScope.has(expense.propertyId) || expense.propertyId === propertyId);
   const gross = paidPayments.reduce((sum, item) => sum + item.amount, 0);
   const expenseTotal = expenses.reduce((sum, item) => sum + item.amount, 0);
@@ -326,28 +328,38 @@ function renderFinance(data) {
     scope.propertyId ? property.id === scope.propertyId : scope.categoryId ? property.categoryId === scope.categoryId : true
   ).map((property) => property.id));
   const payments = data.payments.filter((item) => propertyIds.has(item.propertyId) && inPeriod(item.date, period));
+  const activePayments = payments.filter(isPaymentActive);
   const expenses = data.expenses.filter((item) => {
     if (!inPeriod(item.date, period)) return false;
     if (filter === "all") return true;
     return item.scope !== "global" && propertyIds.has(item.propertyId);
   });
-  const income = payments.reduce((sum, item) => sum + item.amount, 0);
+  const income = activePayments.reduce((sum, item) => sum + item.amount, 0);
   const cost = expenses.reduce((sum, item) => sum + item.amount, 0);
   $("#finance-stats").innerHTML = [
-    statCard("Total pemasukan", formatRupiah(income), "↗", "green", `${payments.length} pembayaran lunas`),
+    statCard("Total pemasukan", formatRupiah(income), "↗", "green", `${activePayments.length} pembayaran lunas`),
     statCard("Total pengeluaran", formatRupiah(cost), "↘", "orange", `${expenses.length} pengeluaran tercatat`),
     statCard("Pendapatan bersih", formatRupiah(income - cost), "◈", "purple", "Pemasukan dikurangi pengeluaran")
   ].join("");
 
   const transactions = [
-    ...payments.map((item) => ({ ...item, type: "Pemasukan", category: "Sewa lunas" })),
+    ...payments.map((item) => ({
+      ...item,
+      type: "Pemasukan",
+      category: isPaymentActive(item) ? "Sewa lunas" : "Dibatalkan"
+    })),
     ...expenses.map((item) => ({ ...item, type: "Pengeluaran", category: item.category }))
   ].sort((a, b) => b.date.localeCompare(a.date));
-  $("#transaction-list").innerHTML = transactions.length ? `<table class="transaction-table"><thead><tr><th>Tanggal</th><th>Transaksi</th><th>Properti / cakupan</th><th>Kategori</th><th>Nominal</th></tr></thead><tbody>${transactions.map((item) => {
+  $("#transaction-list").innerHTML = transactions.length ? `<table class="transaction-table"><thead><tr><th>Tanggal</th><th>Transaksi</th><th>Properti / cakupan</th><th>Kategori / status</th><th>Nominal</th><th>Aksi</th></tr></thead><tbody>${transactions.map((item) => {
     const property = item.propertyId ? data.propertyById.get(item.propertyId)?.name : null;
     const unitName = item.unitId ? data.unitById.get(item.unitId)?.unitName : item.unitName;
     const coverage = item.type === "Pengeluaran" ? (item.scope === "global" ? "Global" : unitName ? `${property ?? "Properti"} · ${unitName}${item.unitId ? "" : " (unit dihapus)"}` : `${property ?? "Properti"} · Properti`) : `${property ?? "Properti dihapus"}${unitName ? ` · ${unitName}${item.unitId ? "" : " (unit dihapus)"}` : ""}`;
-    return `<tr><td>${dateLabel(item.date)}</td><td>${escapeHtml(item.description)}</td><td>${escapeHtml(coverage)}</td><td class="transaction-type">${escapeHtml(item.category)}</td><td class="${item.type === "Pemasukan" ? "amount-income" : "amount-expense"}">${item.type === "Pemasukan" ? "+" : "−"} ${formatRupiah(item.amount)}</td></tr>`;
+    const isCancelled = item.type === "Pemasukan" && !isPaymentActive(item);
+    const action = item.type === "Pemasukan" && !isCancelled
+      ? `<button class="button button-danger button-sm" data-action="cancel-payment" data-payment-id="${escapeHtml(item.id)}">Batalkan</button>`
+      : isCancelled ? `<span class="transaction-cancelled">Dibatalkan</span>` : "—";
+    const sign = isCancelled ? "" : item.type === "Pemasukan" ? "+" : "−";
+    return `<tr class="${isCancelled ? "transaction-row-cancelled" : ""}"><td>${dateLabel(item.date)}</td><td>${escapeHtml(item.description)}${isCancelled ? `<div class="transaction-cancel-note">Dibatalkan ${item.cancelledAt ? dateLabel(item.cancelledAt.slice(0, 10)) : ""}</div>` : ""}</td><td>${escapeHtml(coverage)}</td><td class="transaction-type">${escapeHtml(item.category)}</td><td class="${item.type === "Pemasukan" ? "amount-income" : "amount-expense"}">${sign} ${formatRupiah(item.amount)}</td><td>${action}</td></tr>`;
   }).join("")}</tbody></table>` : `<div class="empty-state"><strong>Belum ada transaksi</strong><p>Pembayaran yang ditandai lunas dan pengeluaran akan dicatat di sini.</p></div>`;
 }
 
@@ -358,7 +370,7 @@ function reportTransactionsForYear(data, year) {
   const units = new Map(data.units.map((unit) => [unit.id, unit]));
   const tenants = new Map(data.tenants.map((tenant) => [tenant.id, tenant]));
   return [
-    ...data.payments.filter((item) => item.date?.startsWith(yearPrefix)).map((item) => {
+    ...data.payments.filter((item) => isPaymentActive(item) && item.date?.startsWith(yearPrefix)).map((item) => {
       const property = properties.get(item.propertyId);
       const unit = units.get(item.unitId);
       return {
@@ -622,7 +634,7 @@ function handleWhatsApp(tenantId) {
   const unit = tenant ? data.unitById.get(tenant.unitId) : null;
   const property = unit ? data.propertyById.get(unit.propertyId) : null;
   if (!tenant || !unit || !property) return showToast("Data penyewa atau unit tidak ditemukan.");
-  const status = getBillingStatus(tenant, data.payments);
+  const status = getBillingStatus(tenant, data.payments.filter(isPaymentActive));
   try {
     const url = getWhatsAppUrl(tenant.whatsapp, getBillingMessage(tenant, unit, property, status));
     window.open(url, "_blank", "noopener,noreferrer");
@@ -677,6 +689,18 @@ function handleAction(button) {
       showToast("Pembayaran ditandai lunas dan pemasukan dicatat.");
     } catch (error) {
       showToast(error.message);
+    }
+  } else if (action === "cancel-payment") {
+    const payment = db.getById("payments", button.dataset.paymentId);
+    if (payment && isPaymentActive(payment) &&
+      window.confirm(`Batalkan pembayaran "${payment.description}" sebesar ${formatRupiah(payment.amount)}? Pembayaran akan ditandai dibatalkan dan tidak lagi dihitung sebagai pemasukan.`)) {
+      try {
+        db.cancelPayment(payment.id);
+        render();
+        showToast("Pembayaran dibatalkan. Unit dan penyewa tetap aktif.");
+      } catch (error) {
+        showToast(error.message || "Pembayaran gagal dibatalkan.");
+      }
     }
   } else if (action === "remove-tenant") {
     const tenant = db.getAll().tenants.find((item) => item.id === button.dataset.tenantId);
