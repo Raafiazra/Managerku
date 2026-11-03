@@ -1,14 +1,36 @@
-import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { createUserWithEmailAndPassword, onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { auth } from "./config/firebase.js";
 
 const loginForm = document.querySelector("#login-form");
 const registerForm = document.querySelector("#register-form");
 const form = loginForm ?? registerForm;
 const errorMessage = document.querySelector("#auth-error");
+const resetPasswordButton = document.querySelector("#reset-password-button");
 let registrationInProgress = false;
 
 if (!form || !errorMessage) {
   throw new Error("Form autentikasi Managerku tidak ditemukan.");
+}
+
+if (resetPasswordButton && loginForm) {
+  resetPasswordButton.addEventListener("click", async () => {
+    const emailInput = loginForm.querySelector("#email");
+    if (!emailInput.value.trim()) {
+      emailInput.reportValidity();
+      return;
+    }
+
+    resetPasswordButton.disabled = true;
+    errorMessage.textContent = "";
+    try {
+      await sendPasswordResetEmail(auth, emailInput.value.trim());
+      errorMessage.textContent = "Jika akun dengan email tersebut terdaftar, tautan reset password akan dikirim.";
+    } catch (error) {
+      errorMessage.textContent = `Gagal mengirim tautan reset password: ${error.message}`;
+    } finally {
+      resetPasswordButton.disabled = false;
+    }
+  });
 }
 
 onAuthStateChanged(auth, (user) => {

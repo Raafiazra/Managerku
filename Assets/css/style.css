@@ -188,6 +188,7 @@ h2 { font: 700 14px Manrope, sans-serif; margin-bottom: 5px; letter-spacing: -.2
 .remember-option input { accent-color: #3d2619; }
 .auth-link { color: #8c6747; font-size: 11px; font-weight: 600; text-decoration: none; }
 .auth-link:hover { color: #2c1a0e; text-decoration: underline; }
+.auth-link-button { justify-self: end; padding: 0; border: 0; background: transparent; cursor: pointer; }
 .btn-auth { width: 100%; min-height: 45px; border: 0; border-radius: 8px; color: #fffaf2; background: #2c1a0e; font-size: 12px; font-weight: 700; cursor: pointer; transition: background .15s ease; }
 .btn-auth:hover { background: #3d2619; }
 .auth-demo-note { margin: 0; color: #8c7965; text-align: center; font-size: 10px; line-height: 1.5; }
@@ -460,5 +461,7 @@ body { background: #efe6d5; color: #21150c; }
 }
 .sidebar-user { min-width: 0; flex: 1; }
 .sidebar-user strong, .sidebar-user small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-password { display: block; padding: 3px 0 0; border: 0; color: #d4b68d; background: transparent; font-size: 10px; text-align: left; cursor: pointer; }
+.sidebar-password:hover { color: #fff4e5; text-decoration: underline; }
 .sidebar-logout { min-height: 36px; border: 1px solid #80634a; border-radius: 6px; padding: 6px 9px; color: #fff4e5; background: transparent; font-size: 10px; cursor: pointer; }
 .sidebar-logout:hover { background: #674a34; }

@@ -2,12 +2,15 @@ import { auth } from "../../config/firebase.js";
 import {
   browserLocalPersistence,
   browserSessionPersistence,
+  EmailAuthProvider,
   createUserWithEmailAndPassword,
   onAuthStateChanged,
+  reauthenticateWithCredential,
   sendPasswordResetEmail,
   setPersistence,
   signInWithEmailAndPassword,
   signOut,
+  updatePassword,
   updateProfile
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { db, getCurrentAppDate, getLegacyData, setCloudSync, setUserStorageScope } from "./db.js";
@@ -69,6 +72,8 @@ function authErrorMessage(error) {
     "auth/email-already-in-use": "Email ini sudah terdaftar.",
     "auth/invalid-email": "Format email tidak valid.",
     "auth/invalid-credential": "Email atau password salah.",
+    "auth/wrong-password": "Password saat ini salah.",
+    "auth/requires-recent-login": "Sesi sudah lama. Keluar lalu masuk kembali sebelum mengganti password.",
     "auth/user-disabled": "Akun ini dinonaktifkan.",
     "auth/weak-password": "Password terlalu lemah. Gunakan minimal 8 karakter.",
     "auth/too-many-requests": "Terlalu banyak percobaan. Coba lagi beberapa saat.",
@@ -482,6 +487,55 @@ function openModal(title, subtitle, formFields, onSubmit) {
   });
 }
 
+function openChangePasswordModal() {
+  if (!authenticatedUser?.email) {
+    showToast("Akun ini tidak memiliki email untuk verifikasi password.");
+    return;
+  }
+
+  const root = $("#modal-root");
+  root.innerHTML = `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="password-modal-title"><div class="modal-header"><div><h2 id="password-modal-title">Ganti password</h2><p>Masukkan password saat ini untuk verifikasi akun.</p></div><button class="modal-close close-btn" type="button" aria-label="Tutup">×</button></div><form id="change-password-form"><div class="form-grid">
+    <div class="form-field full"><label for="current-password">Password saat ini</label><input id="current-password" name="currentPassword" type="password" autocomplete="current-password" required></div>
+    <div class="form-field full"><label for="new-password">Password baru</label><input id="new-password" name="newPassword" type="password" autocomplete="new-password" minlength="8" required></div>
+    <div class="form-field full"><label for="confirm-password">Konfirmasi password baru</label><input id="confirm-password" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required></div>
+    </div><p id="change-password-error" class="form-note password-form-error" role="alert" aria-live="polite"></p><div class="modal-actions"><button type="button" class="button button-outline modal-cancel">Batal</button><button type="submit" class="button button-primary">Simpan password</button></div></form></section></div>`;
+
+  const close = () => { root.innerHTML = ""; };
+  $(".modal-close", root).addEventListener("click", close);
+  $(".modal-cancel", root).addEventListener("click", close);
+  $(".modal-backdrop", root).addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) close();
+  });
+  $("#change-password-form", root).addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const currentPassword = $("#current-password", form).value;
+    const newPassword = $("#new-password", form).value;
+    const confirmPassword = $("#confirm-password", form).value;
+    const error = $("#change-password-error", root);
+    const submitButton = $('button[type="submit"]', form);
+
+    if (newPassword !== confirmPassword) {
+      error.textContent = "Konfirmasi password baru tidak sama.";
+      return;
+    }
+
+    submitButton.disabled = true;
+    error.textContent = "";
+    try {
+      const credential = EmailAuthProvider.credential(authenticatedUser.email, currentPassword);
+      await reauthenticateWithCredential(authenticatedUser, credential);
+      await updatePassword(authenticatedUser, newPassword);
+      close();
+      showToast("Password berhasil diperbarui.");
+    } catch (caughtError) {
+      error.textContent = authErrorMessage(caughtError);
+    } finally {
+      submitButton.disabled = false;
+    }
+  });
+}
+
 function openCategoryModal() {
   openModal("Tambah kategori", "Buat kelompok untuk mengatur properti Anda.", field("name", "Nama kategori", "text", { placeholder: "Contoh: Kos Putra", full: true }), (values) => {
     db.createCategory(values);
@@ -821,6 +875,7 @@ $("#input-register-confirm-password").addEventListener("input", (event) => {
 $("#auth-retry-button").addEventListener("click", () => {
   if (auth.currentUser) initializeAuthenticatedSession(auth.currentUser);
 });
+$("#change-password-button").addEventListener("click", openChangePasswordModal);
 $("#logout-button").addEventListener("click", async () => {
   if (!authenticatedUser) return;
   try {
