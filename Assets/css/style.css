@@ -183,6 +183,7 @@ h2 { font: 700 14px Manrope, sans-serif; margin-bottom: 5px; letter-spacing: -.2
 .auth-password-wrap input { padding-right: 45px; }
 .password-toggle { position: absolute; top: 50%; right: 6px; transform: translateY(-50%); width: 34px; height: 34px; border: 0; border-radius: 6px; color: #8c6747; background: transparent; cursor: pointer; }
 .password-toggle:hover { background: #f3ebdf; }
+.password-toggle.is-visible { color: #2c1a0e; }
 .auth-options { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: -3px; }
 .remember-option { display: inline-flex; align-items: center; gap: 6px; color: #705b48; font-size: 11px; }
 .remember-option input { accent-color: #3d2619; }

@@ -31,7 +31,7 @@
             <label for="input-login-password">Password</label>
             <div class="auth-password-wrap">
               <input id="input-login-password" name="password" type="password" placeholder="Masukkan password" autocomplete="current-password" required>
-              <button class="password-toggle" type="button" data-password-toggle="input-login-password" aria-label="Tampilkan password" aria-pressed="false">◉</button>
+              <button class="password-toggle toggle-password" type="button" data-target="input-login-password" aria-label="Tampilkan password" aria-pressed="false">◉</button>
             </div>
           </div>
           <div class="auth-options">
@@ -54,14 +54,14 @@
             <label for="input-register-password">Password</label>
             <div class="auth-password-wrap">
               <input id="input-register-password" name="password" type="password" placeholder="Buat password (min. 8 karakter)" autocomplete="new-password" minlength="8" required>
-              <button class="password-toggle" type="button" data-password-toggle="input-register-password" aria-label="Tampilkan password" aria-pressed="false">◉</button>
+              <button class="password-toggle toggle-password" type="button" data-target="input-register-password" aria-label="Tampilkan password" aria-pressed="false">◉</button>
             </div>
           </div>
           <div class="auth-field">
             <label for="input-register-confirm-password">Konfirmasi Password</label>
             <div class="auth-password-wrap">
               <input id="input-register-confirm-password" name="confirmPassword" type="password" placeholder="Ulangi password" autocomplete="new-password" minlength="8" required>
-              <button class="password-toggle" type="button" data-password-toggle="input-register-confirm-password" aria-label="Tampilkan password" aria-pressed="false">◉</button>
+              <button class="password-toggle toggle-password" type="button" data-target="input-register-confirm-password" aria-label="Tampilkan password" aria-pressed="false">◉</button>
             </div>
           </div>
           <button class="btn-auth" type="submit">Buat Akun Baru</button>

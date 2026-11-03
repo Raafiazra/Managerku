@@ -16,6 +16,7 @@ import {
 import { db, getCurrentAppDate, getLegacyData, setCloudSync, setUserStorageScope } from "./db.js";
 import { flushUserWrites, importUserData, loadUserData, saveUserData } from "./firestore.js";
 import { formatRupiah, getBillingMessage, getBillingStatus, getWhatsAppUrl } from "./billing.js";
+import { setupPasswordToggles } from "./password-toggle.js";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -24,6 +25,8 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => 
 })[char]);
 const today = getCurrentAppDate;
 const dateLabel = (value) => value ? new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`)) : "—";
+
+setupPasswordToggles();
 
 let activeView = "dashboard";
 let activePropertyId = "all";
@@ -495,9 +498,9 @@ function openChangePasswordModal() {
 
   const root = $("#modal-root");
   root.innerHTML = `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="password-modal-title"><div class="modal-header"><div><h2 id="password-modal-title">Ganti password</h2><p>Masukkan password saat ini untuk verifikasi akun.</p></div><button class="modal-close close-btn" type="button" aria-label="Tutup">×</button></div><form id="change-password-form"><div class="form-grid">
-    <div class="form-field full"><label for="current-password">Password saat ini</label><input id="current-password" name="currentPassword" type="password" autocomplete="current-password" required></div>
-    <div class="form-field full"><label for="new-password">Password baru</label><input id="new-password" name="newPassword" type="password" autocomplete="new-password" minlength="8" required></div>
-    <div class="form-field full"><label for="confirm-password">Konfirmasi password baru</label><input id="confirm-password" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required></div>
+    <div class="form-field full"><label for="current-password">Password saat ini</label><div class="auth-password-wrap"><input id="current-password" name="currentPassword" type="password" autocomplete="current-password" required><button class="password-toggle toggle-password" type="button" data-target="current-password" aria-label="Tampilkan password" aria-pressed="false">◉</button></div></div>
+    <div class="form-field full"><label for="new-password">Password baru</label><div class="auth-password-wrap"><input id="new-password" name="newPassword" type="password" autocomplete="new-password" minlength="8" required><button class="password-toggle toggle-password" type="button" data-target="new-password" aria-label="Tampilkan password" aria-pressed="false">◉</button></div></div>
+    <div class="form-field full"><label for="confirm-password">Konfirmasi password baru</label><div class="auth-password-wrap"><input id="confirm-password" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required><button class="password-toggle toggle-password" type="button" data-target="confirm-password" aria-label="Tampilkan password" aria-pressed="false">◉</button></div></div>
     </div><p id="change-password-error" class="form-note password-form-error" role="alert" aria-live="polite"></p><div class="modal-actions"><button type="button" class="button button-outline modal-cancel">Batal</button><button type="submit" class="button button-primary">Simpan password</button></div></form></section></div>`;
 
   const close = () => { root.innerHTML = ""; };
@@ -810,17 +813,6 @@ $$("[data-auth-tab]").forEach((tab) => {
   tab.addEventListener("click", () => {
     setAuthTab(tab.dataset.authTab);
     setAuthStatus("");
-  });
-});
-
-$$("[data-password-toggle]").forEach((toggle) => {
-  toggle.addEventListener("click", () => {
-    const input = $(`#${toggle.dataset.passwordToggle}`);
-    const showPassword = input.type === "password";
-    input.type = showPassword ? "text" : "password";
-    toggle.setAttribute("aria-pressed", String(showPassword));
-    toggle.setAttribute("aria-label", showPassword ? "Sembunyikan password" : "Tampilkan password");
-    toggle.textContent = showPassword ? "◎" : "◉";
   });
 });
 

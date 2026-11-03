@@ -1,5 +1,6 @@
 import { createUserWithEmailAndPassword, onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { auth } from "./config/firebase.js";
+import { setupPasswordToggles } from "./Assets/js/password-toggle.js";
 
 const loginForm = document.querySelector("#login-form");
 const registerForm = document.querySelector("#register-form");
@@ -7,6 +8,8 @@ const form = loginForm ?? registerForm;
 const errorMessage = document.querySelector("#auth-error");
 const resetPasswordButton = document.querySelector("#reset-password-button");
 let registrationInProgress = false;
+
+setupPasswordToggles();
 
 if (!form || !errorMessage) {
   throw new Error("Form autentikasi Managerku tidak ditemukan.");
