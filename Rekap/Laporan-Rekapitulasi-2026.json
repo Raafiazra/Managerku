@@ -1,0 +1,41 @@
+{
+  "id": "2bcabc2c-6948-4cb1-bc71-779b979fae41",
+  "year": 2026,
+  "createdAt": "2026-11-03T05:51:54.079Z",
+  "totals": {
+    "income": 1200000,
+    "expenses": 300000,
+    "net": 900000
+  },
+  "counts": {
+    "income": 1,
+    "expenses": 1
+  },
+  "transactions": [
+    {
+      "id": "296a597d-29fb-4aae-bba3-7715f9a3da94",
+      "type": "expense",
+      "date": "2026-11-03",
+      "amount": 300000,
+      "description": "Ganti keran",
+      "scope": "unit",
+      "expenseCategory": "Perbaikan",
+      "propertyId": "4a54c65b-d534-4679-8c42-88a2588680c4",
+      "propertyName": "Kos Putra 1",
+      "categoryName": "Kos Putra",
+      "unitName": "Kamar 01"
+    },
+    {
+      "id": "5990d581-74f5-46c5-b701-c27be98b4648",
+      "type": "income",
+      "date": "2026-11-03",
+      "amount": 1200000,
+      "description": "Sewa Kamar 01 - Budi",
+      "propertyId": "4a54c65b-d534-4679-8c42-88a2588680c4",
+      "propertyName": "Kos Putra 1",
+      "categoryName": "Kos Putra",
+      "unitName": "Kamar 01",
+      "tenantName": null
+    }
+  ]
+}

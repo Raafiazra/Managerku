@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#3d2619">
+    <title>Masuk — Managerku</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="Assets/css/style.css">
+  </head>
+  <body class="auth-open">
+    <main class="auth-overlay">
+      <section class="auth-card">
+        <header class="auth-brand">
+          <img src="Assets/img/logo.png" alt="Logo Managerku" class="auth-logo">
+          <h1>Managerku</h1>
+          <p>Teman Bisnis Terbaik Kamu</p>
+        </header>
+        <form id="login-form" class="auth-form" autocomplete="on">
+          <div class="auth-field">
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" placeholder="nama@email.com" autocomplete="email" required>
+          </div>
+          <div class="auth-field">
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" placeholder="Masukkan password" autocomplete="current-password" required>
+          </div>
+          <button class="btn-auth" type="submit">Masuk ke Managerku</button>
+          <p class="auth-demo-note">Belum punya akun? <a class="auth-link" href="register.html">Daftar Akun</a></p>
+          <p id="auth-error" class="auth-status" role="alert" aria-live="polite"></p>
+        </form>
+      </section>
+    </main>
+    <script type="module" src="app-auth.js"></script>
+  </body>
+</html>

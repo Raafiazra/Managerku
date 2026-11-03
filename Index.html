@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#3d2619">
+    <title>Managerku — Manajemen Properti</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="Assets/css/style.css">
+  </head>
+  <body>
+    <div id="auth-container" class="auth-overlay" role="dialog" aria-modal="true" aria-labelledby="auth-brand-title">
+      <section class="auth-card">
+        <header class="auth-brand">
+          <img src="Assets/img/logo.png" alt="Logo Managerku" class="auth-logo">
+          <h1 id="auth-brand-title">Managerku</h1>
+          <p>Teman Bisnis Terbaik Kamu</p>
+        </header>
+        <div class="auth-tabs" role="tablist" aria-label="Autentikasi">
+          <button class="auth-tab active" id="login-tab" type="button" role="tab" aria-selected="true" aria-controls="login-form" data-auth-tab="login">Masuk</button>
+          <button class="auth-tab" id="register-tab" type="button" role="tab" aria-selected="false" aria-controls="register-form" data-auth-tab="register">Daftar Akun</button>
+        </div>
+        <form id="login-form" class="auth-form" autocomplete="on">
+          <div class="auth-field">
+            <label for="input-login-email">Email</label>
+            <input id="input-login-email" name="email" type="email" placeholder="nama@email.com" autocomplete="email" required>
+          </div>
+          <div class="auth-field">
+            <label for="input-login-password">Password</label>
+            <div class="auth-password-wrap">
+              <input id="input-login-password" name="password" type="password" placeholder="Masukkan password" autocomplete="current-password" required>
+              <button class="password-toggle" type="button" data-password-toggle="input-login-password" aria-label="Tampilkan password" aria-pressed="false">◉</button>
+            </div>
+          </div>
+          <div class="auth-options">
+            <label class="remember-option"><input id="remember-me" name="remember" type="checkbox"> <span>Ingat Saya</span></label>
+            <a href="#" class="auth-link" id="forgot-password-link">Lupa Password?</a>
+          </div>
+          <button class="btn-auth" type="submit">Masuk ke Managerku</button>
+          <p class="auth-demo-note">Masuk untuk mengakses data Managerku yang tersimpan di cloud.</p>
+        </form>
+        <form id="register-form" class="auth-form hidden" autocomplete="on" aria-hidden="true">
+          <div class="auth-field">
+            <label for="input-register-name">Nama Lengkap</label>
+            <input id="input-register-name" name="name" type="text" placeholder="Nama lengkap Anda" autocomplete="name" required>
+          </div>
+          <div class="auth-field">
+            <label for="input-register-email">Email</label>
+            <input id="input-register-email" name="email" type="email" placeholder="nama@email.com" autocomplete="email" required>
+          </div>
+          <div class="auth-field">
+            <label for="input-register-password">Password</label>
+            <div class="auth-password-wrap">
+              <input id="input-register-password" name="password" type="password" placeholder="Buat password (min. 8 karakter)" autocomplete="new-password" minlength="8" required>
+              <button class="password-toggle" type="button" data-password-toggle="input-register-password" aria-label="Tampilkan password" aria-pressed="false">◉</button>
+            </div>
+          </div>
+          <div class="auth-field">
+            <label for="input-register-confirm-password">Konfirmasi Password</label>
+            <div class="auth-password-wrap">
+              <input id="input-register-confirm-password" name="confirmPassword" type="password" placeholder="Ulangi password" autocomplete="new-password" minlength="8" required>
+              <button class="password-toggle" type="button" data-password-toggle="input-register-confirm-password" aria-label="Tampilkan password" aria-pressed="false">◉</button>
+            </div>
+          </div>
+          <button class="btn-auth" type="submit">Buat Akun Baru</button>
+          <p class="auth-demo-note">Buat akun untuk memulai workspace Managerku Anda.</p>
+        </form>
+        <p id="auth-status" class="auth-demo-note auth-status" role="status" aria-live="polite"></p>
+        <button class="btn-auth hidden" id="auth-retry-button" type="button">Coba Muat Data Lagi</button>
+      </section>
+    </div>
+    <div class="app-shell hidden" id="app-shell">
+      <aside class="sidebar" id="property-sidebar">
+        <a class="brand-header" href="#" aria-label="Managerku beranda">
+          <img src="Assets/img/logo.png" alt="Logo Managerku" class="brand-logo">
+          <div class="brand-text">
+            <h1 class="brand-title">Managerku</h1>
+            <span class="brand-tagline">Teman Bisnis Terbaik Kamu</span>
+          </div>
+        </a>
+        <div class="sidebar-label">MENU UTAMA</div>
+        <nav class="main-nav" aria-label="Navigasi utama">
+          <button class="nav-link active" data-view="dashboard"><span class="nav-icon">▦</span>Dashboard</button>
+          <button class="nav-link" data-view="units"><span class="nav-icon">▤</span>Unit &amp; Penyewa</button>
+          <button class="nav-link" data-view="finance"><span class="nav-icon">◷</span>Keuangan</button>
+          <button class="nav-link" data-view="annual"><span class="nav-icon">▣</span>Rekap Tahunan</button>
+        </nav>
+        <div class="sidebar-section-heading">
+          <span>PROPERTI</span>
+          <button class="icon-button small" data-action="add-category" title="Tambah kategori" aria-label="Tambah kategori">＋</button>
+        </div>
+        <div id="property-nav" class="property-nav"></div>
+        <div class="sidebar-bottom">
+          <span class="avatar">KM</span>
+          <span class="sidebar-user"><strong id="auth-user-name">Pengelola</strong><small id="auth-user-email">Akun Firebase</small></span>
+          <button class="sidebar-logout" id="logout-button" type="button">Keluar</button>
+          <span class="online-dot" title="Data tersimpan di perangkat"></span>
+        </div>
+      </aside>
+      <div id="sidebar-overlay" class="sidebar-overlay" aria-hidden="true"></div>
+
+      <main class="main-content">
+        <header class="top-nav">
+          <button id="mobile-menu-btn" class="mobile-menu-btn" type="button" aria-label="Buka menu navigasi" aria-expanded="false" aria-controls="property-sidebar">☰</button>
+          <div class="breadcrumb"><span>Workspace</span><span class="crumb-separator">/</span><strong id="page-title">Dashboard</strong></div>
+          <div class="topbar-actions">
+            <span class="today-label" id="today-label"></span>
+            <label class="date-mode-control"><span class="sr-only">Mode tanggal aplikasi</span><select id="date-mode" aria-label="Mode tanggal aplikasi"><option value="device">Ikuti Tanggal Laptop</option><option value="custom">Custom Date Mode</option></select></label>
+            <input id="app-date-picker" class="app-date-picker hidden" type="date" aria-label="Pilih tanggal kustom">
+            <button class="button button-outline date-reset-button hidden" id="reset-date-button" type="button" data-action="reset-date">Reset ke Hari Ini</button>
+            <button class="button button-outline" data-action="add-expense"><span>−</span> Catat Pengeluaran</button>
+            <button class="button button-primary" data-action="add-category"><span>＋</span> Setup Properti</button>
+          </div>
+        </header>
+
+        <section class="page-section" id="dashboard-view">
+          <div class="page-heading">
+            <div><p class="eyebrow">RINGKASAN BISNIS</p><h1>Dashboard</h1><p class="page-subtitle">Pantau properti, pembayaran, dan performa kos Anda.</p></div>
+            <label class="select-wrap"><span class="sr-only">Filter ringkasan berdasarkan properti</span><select id="dashboard-filter"></select></label>
+          </div>
+          <div class="stats-grid" id="dashboard-stats"></div>
+          <section class="panel">
+            <div class="section-heading">
+              <div><h2>Unit &amp; status pembayaran</h2><p>Ringkasan kamar dari properti yang dipilih.</p></div>
+              <button class="text-button" data-view="units">Lihat semua unit <span>→</span></button>
+            </div>
+            <div id="dashboard-units" class="unit-grid"></div>
+          </section>
+          <section class="panel activity-panel">
+            <div class="section-heading"><div><h2>Aktivitas terbaru</h2><p>Pemasukan dan pengeluaran terakhir.</p></div><button class="text-button" data-view="finance">Laporan keuangan <span>→</span></button></div>
+            <div id="dashboard-activity" class="activity-list"></div>
+          </section>
+        </section>
+
+        <section class="page-section hidden" id="units-view">
+          <div class="page-heading">
+            <div><p class="eyebrow">INVENTARIS</p><h1>Unit &amp; Penyewa</h1><p class="page-subtitle">Kelola unit dan tindak lanjuti pembayaran sewa.</p></div>
+            <div class="heading-actions"><select id="unit-filter" aria-label="Filter unit berdasarkan properti"></select><button class="button button-primary" data-action="add-unit">＋ Tambah unit</button></div>
+          </div>
+          <div id="billing-legend" class="legend-row">
+            <span class="legend-item"><i class="legend-dot" style="background:#29a877"></i>Lunas</span>
+            <span class="legend-item"><i class="legend-dot" style="background:#e1b12b"></i>H-3</span>
+            <span class="legend-item"><i class="legend-dot" style="background:#ed8c39"></i>Hari H</span>
+            <span class="legend-item"><i class="legend-dot" style="background:#e36a77"></i>Tunggakan</span>
+            <span class="legend-item"><i class="legend-dot" style="background:#c94351"></i>Kritis</span>
+            <span class="legend-item"><i class="legend-dot" style="background:#c7ced8"></i>Kosong</span>
+          </div>
+          <div id="units-content"></div>
+        </section>
+
+        <section class="page-section hidden" id="finance-view">
+          <div class="page-heading">
+            <div><p class="eyebrow">LAPORAN</p><h1>Keuangan</h1><p class="page-subtitle">Pemasukan lunas dan pengeluaran yang tercatat.</p></div>
+            <button class="button button-primary" data-action="add-expense">＋ Catat pengeluaran</button>
+          </div>
+          <div class="finance-filters">
+            <label>Ruang lingkup<select id="finance-filter"></select></label>
+            <label>Periode<select id="finance-period"><option value="all">Semua waktu</option><option value="month">Bulan ini</option><option value="year">Tahun ini</option></select></label>
+          </div>
+          <div id="finance-stats" class="stats-grid finance-stats"></div>
+          <section class="panel">
+            <div class="section-heading"><div><h2>Transaksi</h2><p>Catatan pemasukan sewa dan pengeluaran.</p></div></div>
+            <div id="transaction-list"></div>
+          </section>
+        </section>
+        <section class="page-section hidden" id="annual-view">
+          <div class="page-heading">
+            <div><p class="eyebrow">ARSIP &amp; PERIODE</p><h1>Rekap Tahunan</h1><p class="page-subtitle">Tutup buku tahunan, simpan arsip laporan, dan mulai periode baru.</p></div>
+            <label class="select-wrap"><span class="sr-only">Pilih tahun rekap</span><select id="annual-year"></select></label>
+          </div>
+          <section class="panel annual-close-panel">
+            <div class="section-heading">
+              <div><h2 id="annual-action-title">Tutup buku tahunan</h2><p id="annual-action-description">Buat arsip pemasukan dan pengeluaran berdasarkan tahun.</p></div>
+              <div class="annual-actions">
+                <button class="button button-primary" id="archive-year-button" data-action="archive-year">Rekap &amp; Tutup Buku</button>
+              </div>
+            </div>
+            <div id="annual-preview" class="annual-preview"></div>
+          </section>
+          <section class="panel">
+            <div class="section-heading"><div><h2>Arsip laporan tahunan</h2><p>Arsip tersimpan di browser ini dan dapat dibuka kembali.</p></div></div>
+            <div id="archive-list" class="archive-list"></div>
+          </section>
+        </section>
+      </main>
+    </div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <div id="modal-root"></div>
+    <script type="module" src="Assets/js/main.js"></script>
+  </body>
+</html>
