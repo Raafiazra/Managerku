@@ -28,6 +28,22 @@ const dateLabel = (value) => value ? new Intl.DateTimeFormat("id-ID", { dateStyl
 
 setupPasswordToggles();
 
+const brandLogo = $(".brand-logo");
+if (brandLogo) {
+  let wiggleTimer;
+  brandLogo.addEventListener("click", () => {
+    brandLogo.classList.remove("logo-wiggle");
+    void brandLogo.offsetWidth;
+    brandLogo.classList.add("logo-wiggle");
+    clearTimeout(wiggleTimer);
+    wiggleTimer = setTimeout(() => brandLogo.classList.remove("logo-wiggle"), 550);
+  });
+  brandLogo.addEventListener("animationend", () => {
+    clearTimeout(wiggleTimer);
+    brandLogo.classList.remove("logo-wiggle");
+  });
+}
+
 let activeView = "dashboard";
 let activePropertyId = "all";
 let annualYear = null;
@@ -281,7 +297,7 @@ function renderDashboard(data) {
   const dashboardUnits = $("#dashboard-units");
   dashboardUnits.innerHTML = units.length
     ? units.slice(0, 6).map((unit) => unitCard(data, unit)).join("")
-    : `<div class="empty-state"><strong>Belum ada unit</strong><p>Tambahkan kategori, properti, lalu unit untuk mulai mengelola kos.</p><button class="button button-primary" data-action="add-category">Setup properti</button></div>`;
+    : `<div class="empty-state"><strong>Belum ada unit</strong><p>Tambahkan kategori, properti, lalu unit untuk mulai mengelola bisnis.</p><button class="button button-primary" data-action="add-category">Setup properti</button></div>`;
 
   const activity = [
     ...paidPayments.map((item) => ({ ...item, type: "income", label: item.description })),
