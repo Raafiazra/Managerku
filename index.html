@@ -80,18 +80,22 @@
             <span class="brand-tagline">Teman Bisnis Terbaik Kamu</span>
           </div>
         </a>
-        <div class="sidebar-label">MENU UTAMA</div>
-        <nav class="main-nav" aria-label="Navigasi utama">
-          <button class="nav-link active" data-view="dashboard"><span class="nav-icon">▦</span>Dashboard</button>
-          <button class="nav-link" data-view="units"><span class="nav-icon">▤</span>Unit &amp; Penyewa</button>
-          <button class="nav-link" data-view="finance"><span class="nav-icon">◷</span>Keuangan</button>
-          <button class="nav-link" data-view="annual"><span class="nav-icon">▣</span>Rekap Tahunan</button>
-        </nav>
-        <div class="sidebar-section-heading">
-          <span>PROPERTI</span>
-          <button class="icon-button small" data-action="add-category" title="Tambah kategori" aria-label="Tambah kategori">＋</button>
+        <div class="sidebar-scrollable-content">
+          <div class="sidebar-label">MENU UTAMA</div>
+          <nav class="main-nav" aria-label="Navigasi utama">
+            <button class="nav-link active" data-view="dashboard"><span class="nav-icon">▦</span>Dashboard</button>
+            <button class="nav-link" data-view="units"><span class="nav-icon">▤</span>Unit &amp; Penyewa</button>
+            <button class="nav-link" data-view="finance"><span class="nav-icon">◷</span>Keuangan</button>
+            <button class="nav-link" data-view="annual"><span class="nav-icon">▣</span>Rekap Tahunan</button>
+          </nav>
+          <div class="sidebar-property-section">
+            <div class="sidebar-section-heading">
+              <span>PROPERTI</span>
+              <button class="icon-button small" data-action="add-category" title="Tambah kategori" aria-label="Tambah kategori">＋</button>
+            </div>
+            <div id="property-nav" class="property-nav"></div>
+          </div>
         </div>
-        <div id="property-nav" class="property-nav"></div>
         <div class="sidebar-bottom">
           <span class="avatar">KM</span>
           <span class="sidebar-user"><strong id="auth-user-name">Pengelola</strong><small id="auth-user-email">Akun Firebase</small><button class="sidebar-password" id="change-password-button" type="button">Ganti password</button></span>
