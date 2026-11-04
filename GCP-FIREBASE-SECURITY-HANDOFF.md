@@ -46,3 +46,11 @@ API key Firebase web memang berada di klien. Pembatasan key mengurangi penyalahg
 4. Workflow `.github/workflows/deploy-pages.yml` membangun dan menerbitkan `dist/` pada GitHub Pages. Aktifkan Settings → Pages → Build and deployment → GitHub Actions.
 5. Tambahkan domain GitHub Pages situs ke Firebase Console → Authentication → Settings → Authorized domains, kemudian uji login setelah workflow berhasil.
 6. Jalankan `npm install`, lalu `npm run dev` untuk lokal. Gunakan `npm run build` untuk menghasilkan situs di `dist/`.
+
+### 5. Deploy langsung ke Firebase Hosting
+
+1. Pastikan Firebase CLI terpasang dan akun Google yang aktif memiliki akses ke project `managerku-b4e0e`.
+2. Pastikan konfigurasi `.env` lokal mengarah ke project tersebut; jangan commit `.env`.
+3. Jalankan `npm run deploy:firebase` untuk membangun `dist/` dan menerbitkannya ke Firebase Hosting. Konfigurasi Hosting ada di `firebase.json`, dan project default di `.firebaserc`.
+4. Tambahkan domain Hosting yang digunakan (misalnya `managerku-b4e0e.web.app`) ke Firebase Authentication → Settings → Authorized domains.
+5. Uji login dan Firestore setelah deploy berhasil. API key `VITE_*` tetap publik di bundle browser.
