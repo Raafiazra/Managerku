@@ -469,3 +469,93 @@ body { background: #efe6d5; color: #21150c; }
 .sidebar-password:hover { color: #fff4e5; text-decoration: underline; }
 .sidebar-logout { min-height: 36px; border: 1px solid #80634a; border-radius: 6px; padding: 6px 9px; color: #fff4e5; background: transparent; font-size: 10px; cursor: pointer; }
 .sidebar-logout:hover { background: #674a34; }
+
+:root {
+  --shadow:
+    0 4px 6px -1px rgba(45, 27, 19, .05),
+    0 10px 20px -3px rgba(45, 27, 19, .08);
+}
+body {
+  position: relative;
+  background-color: #f5efe6;
+  background-image: linear-gradient(135deg, #faf6f0 0%, #f5efe6 50%, #eae0d0 100%);
+  background-attachment: fixed;
+  color: #2d1b13;
+}
+body::after {
+  content: "";
+  position: fixed;
+  inset: auto 0 0;
+  height: 120px;
+  background: linear-gradient(to top, rgba(45, 27, 19, .08), transparent);
+  pointer-events: none;
+  z-index: 0;
+}
+.app-shell {
+  position: relative;
+  z-index: 1;
+}
+.main-content {
+  background-color: transparent;
+}
+.panel, .stat-card {
+  background-color: #fff;
+  border: 1px solid rgba(45, 27, 19, .06);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+.stat-card {
+  transition: transform .25s ease, box-shadow .25s ease;
+}
+.stat-card:hover {
+  transform: translateY(-3px);
+  box-shadow:
+    0 8px 12px -2px rgba(45, 27, 19, .08),
+    0 16px 28px -4px rgba(45, 27, 19, .12);
+}
+.unit-card {
+  background-color: #fff;
+  border-top: 1px solid rgba(45, 27, 19, .06);
+  border-right: 1px solid rgba(45, 27, 19, .06);
+  border-bottom: 1px solid rgba(45, 27, 19, .06);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+.brand-header {
+  perspective: 1000px;
+}
+.brand-logo {
+  width: 70px;
+  height: 70px;
+  cursor: pointer;
+  user-select: none;
+  transition: transform .6s cubic-bezier(.34, 1.56, .64, 1);
+}
+.brand-logo:hover {
+  transform: rotate(360deg) scale(1.08);
+}
+.brand-logo:active {
+  transform: scale(.88) rotate(-15deg);
+  transition: transform .1s ease;
+}
+@keyframes logoWiggle {
+  0% { transform: scale(1) rotate(0deg); }
+  25% { transform: scale(1.15) rotate(-12deg); }
+  50% { transform: scale(1.15) rotate(12deg); }
+  75% { transform: scale(1.1) rotate(-6deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+.logo-wiggle {
+  animation: logoWiggle .5s ease-in-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .brand-logo, .stat-card {
+    transition: none;
+  }
+  .brand-logo:hover, .brand-logo:active, .stat-card:hover {
+    transform: none;
+  }
+  .logo-wiggle {
+    animation: none;
+  }
+}
