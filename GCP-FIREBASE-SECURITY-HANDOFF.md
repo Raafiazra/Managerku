@@ -6,7 +6,8 @@ Dokumen ini merangkum kondisi keamanan yang dapat diverifikasi dari repositori d
 
 - `.gitignore` mengabaikan `.env`, berkas environment lokal, direktori dependensi/build, log, cache Python, serta cache editor.
 - Pemeriksaan lokal tidak menemukan berkas `.env` terlacak.
-- Riwayat Git lokal yang diperiksa tidak menunjukkan pola umum kunci server. Konfigurasi Firebase web di `config/firebase.js` berisi API key klien; API key tersebut bukan kredensial server. Jangan menaruh service-account key atau kredensial server di frontend.
+- Konfigurasi Firebase di `config/firebase.js` membaca nilai build-time Vite. `.env.example` hanya berisi nama variabel tanpa nilai proyek.
+- Riwayat Git lokal yang diperiksa tidak menunjukkan pola umum kunci server. API key Firebase web adalah konfigurasi klien publik, bukan kredensial server. Jangan menaruh service-account key atau kredensial server di frontend.
 - Aturan yang tersimpan di `firestore.rules` mewajibkan autentikasi, mencocokkan UID dengan pemilik data, dan membatasi akses ke koleksi yang disebutkan secara eksplisit.
 - Commit pengabaian berkas sensitif: `60555df` pada `main`.
 
@@ -39,4 +40,7 @@ API key Firebase web memang berada di klien. Pembatasan key mengurangi penyalahg
 
 ### 4. Variabel lingkungan
 
-Saat aplikasi mulai menggunakan variabel lingkungan, tambahkan `.env.example` yang hanya memuat nama variabel dan nilai contoh non-rahasia. Jangan memasukkan nilai kredensial yang sebenarnya.
+1. Salin `.env.example` menjadi `.env` dan isi nilai Firebase untuk lingkungan lokal. File `.env` diabaikan Git.
+2. Atur variabel `VITE_FIREBASE_*` yang sama pada environment build/deployment produksi sebelum menjalankan `npm run build`.
+3. Jangan masukkan `.env` ke repository. Vite menyematkan nilai `VITE_*` ke kode browser saat build; nilai tersebut dapat dilihat pengguna dan tidak boleh dianggap rahasia.
+4. Jalankan `npm install`, lalu `npm run dev` untuk lokal. Gunakan `npm run build` untuk menghasilkan situs di `dist/`.

@@ -30,6 +30,8 @@
 ## Pengelolaan environment
 
 - [x] `.env` dan file environment lokal diabaikan Git.
-- [ ] Jika aplikasi mulai memakai environment variables, tambahkan `.env.example` berisi nama variabel dan nilai contoh non-rahasia saja.
+- [x] Konfigurasi Firebase menggunakan variabel `VITE_FIREBASE_*`; `.env.example` hanya berisi nama variabel tanpa nilai proyek.
+- [x] Konfigurasi Firebase yang wajib tidak tersedia menghasilkan error konfigurasi yang jelas.
+- [ ] Admin mengatur `VITE_FIREBASE_*` pada environment build/deployment produksi.
 
-API key klien bukan kontrol akses. Gunakan autentikasi, Firestore Rules, dan kontrol sisi server yang sesuai untuk melindungi data.
+Vite menyematkan nilai `VITE_*` ke kode browser saat build; nilai ini tetap publik dan tidak boleh dianggap rahasia. API key klien bukan kontrol akses. Gunakan autentikasi, Firestore Rules, dan kontrol sisi server yang sesuai untuk melindungi data.
