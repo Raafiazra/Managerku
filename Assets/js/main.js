@@ -16,6 +16,7 @@ import {
 import { db, getCurrentAppDate, getLegacyData, isPaymentActive, setCloudSync, setUserStorageScope } from "./db.js";
 import { flushUserWrites, importUserData, loadUserData, saveUserData } from "./firestore.js";
 import { formatRupiah, getBillingMessage, getBillingStatus, getWhatsAppUrl } from "./billing.js";
+import { showAlert, showConfirm, showToast } from "./dialogs.js";
 import { setupPasswordToggles } from "./password-toggle.js";
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -48,17 +49,8 @@ if (brandLogo) {
 let activeView = "dashboard";
 let activePropertyId = "all";
 let annualYear = null;
-let toastTimer;
 let authenticatedUser = null;
 let authLoadGeneration = 0;
-
-function showToast(message) {
-  const toast = $("#toast");
-  toast.textContent = message;
-  toast.classList.add("show");
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toast.classList.remove("show"), 3200);
-}
 
 function setAuthTab(tab) {
   const isLogin = tab === "login";
@@ -124,7 +116,12 @@ async function initializeAuthenticatedSession(user) {
 
     let accountData = cloud.data;
     if (!cloud.hasRecords && hasLocalBusinessData(legacyData) &&
-      window.confirm("Ditemukan data Managerku lokal pada perangkat ini. Impor data tersebut ke akun Firebase Anda? Data lokal asli tetap disimpan.")) {
+      await showConfirm({
+        title: "Impor data lokal?",
+        message: "Ditemukan data Managerku lokal pada perangkat ini. Impor data tersebut ke akun Firebase Anda?",
+        subtext: "Data lokal asli tetap disimpan.",
+        actionLabel: "Impor Data"
+      })) {
       await importUserData(user.uid, legacyData);
       accountData = legacyData;
     }
@@ -715,14 +712,19 @@ function handleWhatsApp(tenantId) {
   }
 }
 
-function handleAction(button) {
+async function handleAction(button) {
   const action = button.dataset.action;
   if (action === "add-category") {
     openCategoryModal();
   } else if (action === "delete-category") {
     const data = db.getAll();
     const category = data.categories.find((item) => item.id === button.dataset.categoryId);
-    if (category && window.confirm(`Hapus kategori "${category.name}" beserta seluruh properti, unit, penyewa, dan transaksi di dalamnya?`)) {
+    if (category && await showConfirm({
+      title: "Hapus kategori?",
+      message: `Hapus kategori "${category.name}" beserta seluruh properti, unit, penyewa, dan transaksi di dalamnya?`,
+      subtext: "Tindakan ini tidak dapat dibatalkan.",
+      actionLabel: "Ya, Hapus"
+    })) {
       try {
         db.deleteCategory(category.id);
         activePropertyId = "all";
@@ -736,7 +738,12 @@ function handleAction(button) {
     openPropertyModal(button.dataset.categoryId);
   } else if (action === "delete-property") {
     const property = db.getAll().properties.find((item) => item.id === button.dataset.propertyId);
-    if (property && window.confirm(`Hapus properti "${property.name}" beserta seluruh unit, penyewa, dan transaksinya?`)) {
+    if (property && await showConfirm({
+      title: "Hapus properti?",
+      message: `Hapus properti "${property.name}" beserta seluruh unit, penyewa, dan transaksinya?`,
+      subtext: "Tindakan ini tidak dapat dibatalkan.",
+      actionLabel: "Ya, Hapus"
+    })) {
       try {
         db.deleteProperty(property.id);
         if (activePropertyId === property.id) activePropertyId = "all";
@@ -764,8 +771,12 @@ function handleAction(button) {
     }
   } else if (action === "cancel-payment") {
     const payment = db.getById("payments", button.dataset.paymentId);
-    if (payment && isPaymentActive(payment) &&
-      window.confirm(`Batalkan pembayaran "${payment.description}" sebesar ${formatRupiah(payment.amount)}? Pembayaran akan ditandai dibatalkan dan tidak lagi dihitung sebagai pemasukan.`)) {
+    if (payment && isPaymentActive(payment) && await showConfirm({
+      title: "Batalkan pembayaran?",
+      message: `Batalkan pembayaran "${payment.description}" sebesar ${formatRupiah(payment.amount)}?`,
+      subtext: "Pembayaran akan ditandai dibatalkan dan tidak lagi dihitung sebagai pemasukan.",
+      actionLabel: "Ya, Batalkan"
+    })) {
       try {
         db.cancelPayment(payment.id);
         render();
@@ -776,7 +787,12 @@ function handleAction(button) {
     }
   } else if (action === "remove-tenant") {
     const tenant = db.getAll().tenants.find((item) => item.id === button.dataset.tenantId);
-    if (tenant && window.confirm(`Checkout ${tenant.name}? Riwayat transaksi tetap disimpan.`)) {
+    if (tenant && await showConfirm({
+      title: "Checkout penyewa?",
+      message: `Checkout ${tenant.name}?`,
+      subtext: "Riwayat transaksi tetap disimpan.",
+      actionLabel: "Ya, Checkout"
+    })) {
       try {
         db.removeTenant(tenant.id);
         render();
@@ -787,7 +803,12 @@ function handleAction(button) {
     }
   } else if (action === "delete-unit") {
     const unit = db.getAll().units.find((item) => item.id === button.dataset.unitId);
-    if (unit && window.confirm("Apakah Anda yakin ingin menghapus Unit/Kamar ini?")) {
+    if (unit && await showConfirm({
+      title: "Hapus unit?",
+      message: "Apakah Anda yakin ingin menghapus Unit/Kamar ini?",
+      subtext: "Data penyewa akan dibersihkan, sementara riwayat keuangan dipertahankan.",
+      actionLabel: "Ya, Hapus"
+    })) {
       try {
         db.deleteUnit(unit.id);
         render();
@@ -802,8 +823,11 @@ function handleAction(button) {
       const report = db.archiveAnnualReport(year);
       downloadArchiveReport(report);
       render();
-      showToast(`Laporan ${year} disimpan ke arsip dan diunduh sebagai JSON.`);
-      window.alert(`Laporan tahun ${year} berhasil diarsipkan. Tanggal aplikasi tetap mengikuti ${db.getAll().dateMode === "custom" ? "tanggal kustom yang dipilih" : "kalender perangkat"}. Riwayat transaksi tidak dihapus.`);
+      await showAlert({
+        title: "Laporan berhasil diarsipkan",
+        message: `Laporan tahun ${year} berhasil diarsipkan dan diunduh sebagai JSON.`,
+        subtext: `Tanggal aplikasi tetap mengikuti ${db.getAll().dateMode === "custom" ? "tanggal kustom yang dipilih" : "kalender perangkat"}. Riwayat transaksi tidak dihapus.`
+      });
     } catch (error) {
       showToast(error.message || "Rekap tahunan gagal dibuat.");
     }
@@ -812,7 +836,12 @@ function handleAction(button) {
     if (archive) openArchiveDetails(archive);
   } else if (action === "delete-archive") {
     const archive = db.getAll().archives.find((item) => item.id === button.dataset.archiveId);
-    if (archive && window.confirm(`Hapus arsip Laporan Rekapitulasi ${archive.year}? Tindakan ini tidak dapat dibatalkan.`)) {
+    if (archive && await showConfirm({
+      title: "Hapus arsip?",
+      message: `Hapus arsip Laporan Rekapitulasi ${archive.year}?`,
+      subtext: "Tindakan ini tidak dapat dibatalkan.",
+      actionLabel: "Ya, Hapus"
+    })) {
       try {
         db.deleteArchiveReport(archive.id);
         render();
@@ -839,7 +868,12 @@ document.addEventListener("click", (event) => {
   if (event.target.closest(".sidebar [data-view], .sidebar [data-property], .sidebar [data-action]")) {
     setMobileSidebarOpen(false);
   }
-  if (actionButton) handleAction(actionButton);
+  if (actionButton) {
+    void handleAction(actionButton).catch((error) => {
+      console.error("Aksi dashboard gagal.", error);
+      showToast(error.message || "Aksi gagal dilakukan.");
+    });
+  }
   else if (viewButton) {
     activeView = viewButton.dataset.view;
     render();

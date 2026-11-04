@@ -1,5 +1,6 @@
 import { createUserWithEmailAndPassword, onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { auth } from "./config/firebase.js";
+import { showAlert } from "./Assets/js/dialogs.js";
 import { setupPasswordToggles } from "./Assets/js/password-toggle.js";
 
 const loginForm = document.querySelector("#login-form");
@@ -59,7 +60,11 @@ form.addEventListener("submit", async (event) => {
     registrationInProgress = true;
     await createUserWithEmailAndPassword(auth, email, password);
     await signOut(auth);
-    alert("Akun berhasil dibuat!");
+    await showAlert({
+      title: "Pendaftaran berhasil",
+      message: "Akun berhasil dibuat!",
+      subtext: "Silakan masuk dengan email dan password yang baru didaftarkan."
+    });
     window.location.href = "login.html";
   } catch (error) {
     registrationInProgress = false;

@@ -37,6 +37,24 @@
         </form>
       </section>
     </main>
+    <div id="universalModal" class="universal-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-describedby="modalBodyText modalSubText">
+      <div class="universal-modal-card">
+        <div class="universal-modal-header">
+          <div id="modalIcon" class="modal-icon warning" aria-hidden="true">⚠️</div>
+          <h2 id="modalTitle" class="universal-modal-title">Konfirmasi tindakan</h2>
+        </div>
+        <div class="universal-modal-body">
+          <p id="modalBodyText"></p>
+          <small id="modalSubText" class="universal-modal-subtext"></small>
+          <input id="modalInput" class="universal-modal-input hidden" type="text" aria-label="Nilai">
+        </div>
+        <div class="universal-modal-footer">
+          <button id="btnModalSecondary" class="universal-modal-secondary" type="button">Batal</button>
+          <button id="btnModalPrimary" class="universal-modal-primary" type="button">Lanjutkan</button>
+        </div>
+      </div>
+    </div>
+    <div id="toastContainer" class="toast-container"></div>
     <script type="module" src="app-auth.js"></script>
   </body>
 </html>
