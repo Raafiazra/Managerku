@@ -1,1 +1,21 @@
-firebase-debug.log
+# Environment files and secrets
+.env
+.env.local
+.env.*.local
+
+# Dependencies and build output
+node_modules/
+dist/
+build/
+.venv/
+
+# IDE and OS files
+.vscode/
+.idea/
+.DS_Store
+
+# Logs and Python cache
+*.log
+npm-debug.log*
+yarn-debug.log*
+__pycache__/
