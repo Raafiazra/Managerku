@@ -107,11 +107,11 @@
           <div class="breadcrumb"><span>Workspace</span><span class="crumb-separator">/</span><strong id="page-title">Dashboard</strong></div>
           <div class="topbar-actions">
             <span class="today-label" id="today-label"></span>
-            <label class="date-mode-control"><span class="sr-only">Mode tanggal aplikasi</span><select id="date-mode" aria-label="Mode tanggal aplikasi"><option value="device">Ikuti Tanggal Laptop</option><option value="custom">Custom Date Mode</option></select></label>
+            <label class="date-mode-control"><span class="sr-only">Pilih tanggal aplikasi</span><select id="date-mode" aria-label="Pilih tanggal aplikasi"><option value="device">Tanggal Hari Ini</option><option value="custom">Pilih Tanggal Khusus</option></select></label>
             <input id="app-date-picker" class="app-date-picker hidden" type="date" aria-label="Pilih tanggal kustom">
             <button class="button button-outline date-reset-button hidden" id="reset-date-button" type="button" data-action="reset-date">Reset ke Hari Ini</button>
             <button class="button button-outline" data-action="add-expense"><span>−</span> Catat Pengeluaran</button>
-            <button class="button button-primary" data-action="add-category"><span>＋</span> Setup Properti</button>
+            <button class="button button-primary hidden" id="onboarding-action" type="button"><span>＋</span> Tambah unit</button>
           </div>
         </header>
 
@@ -120,6 +120,7 @@
             <div><p class="eyebrow">RINGKASAN BISNIS</p><h1>Dashboard</h1><p class="page-subtitle">Pantau properti, pembayaran, dan performa bisnis Anda.</p></div>
             <label class="select-wrap"><span class="sr-only">Filter ringkasan berdasarkan properti</span><select id="dashboard-filter"></select></label>
           </div>
+          <section class="dashboard-alerts hidden" id="dashboard-alerts" aria-labelledby="dashboard-alerts-title"></section>
           <div class="stats-grid" id="dashboard-stats"></div>
           <section class="panel">
             <div class="section-heading">

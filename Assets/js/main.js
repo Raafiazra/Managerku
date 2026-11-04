@@ -23,6 +23,7 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
 })[char]);
+const walletIcon = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4H20v15H6.5A2.5 2.5 0 0 1 4 16.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M4 7h14a2 2 0 0 1 2 2v2h-5a2 2 0 0 0 0 4h5v1.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M16 13h.01" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>';
 const today = getCurrentAppDate;
 const dateLabel = (value) => value ? new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`)) : "—";
 
@@ -188,6 +189,25 @@ function renderSidebar(data) {
   }).join("");
 }
 
+function renderOnboardingAction(data) {
+  const button = $("#onboarding-action");
+  const propertyId = $("#dashboard-filter").value || "all";
+  const availableUnits = filteredUnits(data, propertyId).filter((unit) =>
+    !data.tenants.some((tenant) => tenant.unitId === unit.id)
+  );
+  let action = "";
+  let label = "";
+
+  if (availableUnits.length) {
+    action = "add-tenant";
+    label = "3. Tambah Penyewa";
+  }
+
+  button.dataset.action = action;
+  button.innerHTML = `<span>＋</span> ${label}`;
+  button.classList.toggle("hidden", activeView !== "dashboard" || !action);
+}
+
 function populateFilters(data) {
   const dashboardSelection = $("#dashboard-filter").value || activePropertyId;
   const unitSelection = $("#unit-filter").value || activePropertyId;
@@ -268,12 +288,22 @@ function unitCard(data, unit) {
   </article>`;
 }
 
-function statCard(label, value, icon, variant, foot) {
-  return `<article class="stat-card"><div class="stat-top"><span>${label}</span><span class="stat-icon ${variant}">${icon}</span></div><div class="stat-value">${value}</div><div class="stat-foot">${foot}</div></article>`;
+function statCard(label, value, icon, variant, foot, helper = "") {
+  return `<article class="stat-card"><div class="stat-top"><span>${label}</span><span class="stat-icon ${variant}">${icon}</span></div><div class="stat-value">${value}</div><div class="stat-foot">${foot}</div>${helper ? `<p class="stat-helper">${helper}</p>` : ""}</article>`;
 }
 
 function filteredUnits(data, propertyId) {
   return data.units.filter((unit) => propertyId === "all" || unit.propertyId === propertyId);
+}
+
+function propertySetupEmptyState(data) {
+  if (!data.categories.length) {
+    return `<div class="empty-state"><strong>Mulai kelola bisnis Anda</strong><p>Langkah 1: buat kategori untuk mengelompokkan properti.</p><button class="button button-primary" data-action="add-category">1. Buat Kategori</button></div>`;
+  }
+  const categoryId = data.categories.length === 1
+    ? ` data-category-id="${escapeHtml(data.categories[0].id)}"`
+    : "";
+  return `<div class="empty-state"><strong>Belum ada properti</strong><p>Langkah 1: tambahkan properti ke kategori Anda.</p><button class="button button-primary" data-action="add-property"${categoryId}>1. Tambah Properti</button></div>`;
 }
 
 function renderDashboard(data) {
@@ -288,16 +318,31 @@ function renderDashboard(data) {
   const expenseTotal = expenses.reduce((sum, item) => sum + item.amount, 0);
   const occupied = units.filter((unit) => Boolean(tenantForUnit(data, unit))).length;
   $("#dashboard-stats").innerHTML = [
-    statCard("Total pemasukan lunas", formatRupiah(gross), "↗", "green", `${paidPayments.length} transaksi tercatat`),
-    statCard("Total pengeluaran", formatRupiah(expenseTotal), "↘", "orange", `${expenses.length} transaksi pengeluaran`),
-    statCard("Pendapatan bersih", formatRupiah(gross - expenseTotal), "◈", "purple", "Pemasukan lunas dikurangi biaya"),
+    statCard("Total pemasukan lunas", formatRupiah(gross), "↗", "green", `${paidPayments.length} transaksi tercatat`, paidPayments.length ? "" : "Data akan muncul setelah kamu mencatat pembayaran pertama."),
+    statCard("Total pengeluaran", formatRupiah(expenseTotal), "↘", "orange", `${expenses.length} transaksi pengeluaran`, expenses.length ? "" : "Catat pengeluaran untuk mulai melihat biaya bisnis."),
+    statCard("Pendapatan bersih", formatRupiah(gross - expenseTotal), walletIcon, "purple", "Pemasukan lunas dikurangi biaya"),
     statCard("Okupansi", `${units.length ? Math.round((occupied / units.length) * 100) : 0}%`, "▤", "", `${occupied} dari ${units.length} unit terisi`)
   ].join("");
+
+  const overdueTenants = units.flatMap((unit) => {
+    const tenant = tenantForUnit(data, unit);
+    if (!tenant) return [];
+    const status = getBillingStatus(tenant, paidPayments);
+    if (status.code !== "OVERDUE_L1" && status.code !== "OVERDUE_CRITICAL") return [];
+    return [{ unit, tenant, status, property: data.propertyById.get(unit.propertyId) }];
+  });
+  const alerts = $("#dashboard-alerts");
+  alerts.classList.toggle("hidden", !overdueTenants.length);
+  alerts.innerHTML = overdueTenants.length
+    ? `<div class="dashboard-alert-heading"><div><p class="eyebrow">PERLU TINDAKAN</p><h2 id="dashboard-alerts-title">Perhatian Hari Ini</h2><p>${overdueTenants.length} penyewa memiliki pembayaran yang melewati jatuh tempo.</p></div></div><ul class="dashboard-alert-list">${overdueTenants.map(({ unit, tenant, status, property }) => `<li class="dashboard-alert-item"><span><strong>${escapeHtml(tenant.name)}</strong> · ${escapeHtml(property?.name ?? "Properti")} / ${escapeHtml(unit.unitName)} · ${Math.abs(status.daysUntilDue)} hari terlambat</span><button class="button button-outline button-sm" data-action="whatsapp" data-tenant-id="${escapeHtml(tenant.id)}">Ingatkan via WA</button></li>`).join("")}</ul>`
+    : "";
 
   const dashboardUnits = $("#dashboard-units");
   dashboardUnits.innerHTML = units.length
     ? units.slice(0, 6).map((unit) => unitCard(data, unit)).join("")
-    : `<div class="empty-state"><strong>Belum ada unit</strong><p>Tambahkan kategori, properti, lalu unit untuk mulai mengelola bisnis.</p><button class="button button-primary" data-action="add-category">Setup properti</button></div>`;
+    : !data.properties.length
+      ? propertySetupEmptyState(data)
+      : `<div class="empty-state"><strong>Belum ada unit</strong><p>Langkah 2: tambahkan unit pada properti Anda.</p><button class="button button-primary" data-action="add-unit">2. Tambah Unit</button></div>`;
 
   const activity = [
     ...paidPayments.map((item) => ({ ...item, type: "income", label: item.description })),
@@ -313,7 +358,7 @@ function renderUnits(data) {
   const properties = data.properties.filter((property) => propertyFilter === "all" || property.id === propertyFilter);
   const target = $("#units-content");
   if (!properties.length) {
-    target.innerHTML = `<div class="panel"><div class="empty-state"><strong>Belum ada properti</strong><p>Buat kategori dan properti untuk menambahkan unit.</p><button class="button button-primary" data-action="add-category">Setup properti</button></div></div>`;
+    target.innerHTML = `<div class="panel">${propertySetupEmptyState(data)}</div>`;
     return;
   }
   target.innerHTML = properties.map((property) => {
@@ -353,9 +398,9 @@ function renderFinance(data) {
   const income = activePayments.reduce((sum, item) => sum + item.amount, 0);
   const cost = expenses.reduce((sum, item) => sum + item.amount, 0);
   $("#finance-stats").innerHTML = [
-    statCard("Total pemasukan", formatRupiah(income), "↗", "green", `${activePayments.length} pembayaran lunas`),
-    statCard("Total pengeluaran", formatRupiah(cost), "↘", "orange", `${expenses.length} pengeluaran tercatat`),
-    statCard("Pendapatan bersih", formatRupiah(income - cost), "◈", "purple", "Pemasukan dikurangi pengeluaran")
+    statCard("Total pemasukan", formatRupiah(income), "↗", "green", `${activePayments.length} pembayaran lunas`, activePayments.length ? "" : "Data akan muncul setelah kamu mencatat pembayaran pertama."),
+    statCard("Total pengeluaran", formatRupiah(cost), "↘", "orange", `${expenses.length} pengeluaran tercatat`, expenses.length ? "" : "Catat pengeluaran untuk mulai melihat biaya bisnis."),
+    statCard("Pendapatan bersih", formatRupiah(income - cost), walletIcon, "purple", "Pemasukan dikurangi pengeluaran")
   ].join("");
 
   const transactions = [
@@ -471,6 +516,7 @@ function downloadArchiveReport(report) {
 function render() {
   const data = dataWithRelations();
   renderSidebar(data);
+  renderOnboardingAction(data);
   populateFilters(data);
   $("#today-label").textContent = new Intl.DateTimeFormat("id-ID", { dateStyle: "full", timeZone: "UTC" }).format(new Date(`${today()}T00:00:00Z`));
   $("#dashboard-view").classList.toggle("hidden", activeView !== "dashboard");
@@ -606,14 +652,24 @@ function openUnitModal(propertyId) {
 function openTenantModal(unitId) {
   const data = db.getAll();
   const unit = data.units.find((item) => item.id === unitId);
-  if (!unit) return showToast("Unit tidak ditemukan.");
+  if (unitId && !unit) return showToast("Unit tidak ditemukan.");
+  const availableUnits = data.units.filter((item) =>
+    !data.tenants.some((tenant) => tenant.unitId === item.id)
+  );
+  if (!unit && !availableUnits.length) return showToast("Tidak ada unit kosong untuk penyewa baru.");
   const dueDate = today();
-  const fields = `<div class="form-field full"><label>Unit</label><input value="${escapeHtml(`${data.properties.find((item) => item.id === unit.propertyId)?.name ?? ""} · ${unit.unitName}`)}" disabled></div>` +
+  const unitField = unit
+    ? `<div class="form-field full"><label>Unit</label><input value="${escapeHtml(`${data.properties.find((item) => item.id === unit.propertyId)?.name ?? ""} · ${unit.unitName}`)}" disabled></div>`
+    : field("unitId", "Unit kosong", "select", { options: availableUnits.map((item) => ({
+      value: item.id,
+      label: `${data.properties.find((property) => property.id === item.propertyId)?.name ?? ""} · ${item.unitName}`
+    })) });
+  const fields = unitField +
     field("name", "Nama penyewa") +
     field("whatsapp", "Nomor WhatsApp", "tel", { placeholder: "08xxxxxxxxxx" }) +
     field("startDate", "Tanggal masuk", "date", { value: dueDate }) +
     field("dueDate", "Jatuh tempo rutin", "date", { value: dueDate });
-  openModal("Tambah penyewa", "Lengkapi data penyewa untuk mulai mengelola tagihan.", fields, (values) => db.createTenant({ ...values, unitId }));
+  openModal("Tambah penyewa", "Lengkapi data penyewa untuk mulai mengelola tagihan.", fields, (values) => db.createTenant({ ...values, unitId: unit?.id ?? values.unitId }));
   $("#field-startDate").value = dueDate;
   $("#field-dueDate").value = dueDate;
 }

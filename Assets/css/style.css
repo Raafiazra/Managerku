@@ -559,3 +559,75 @@ body::after {
     animation: none;
   }
 }
+
+.sidebar {
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+}
+.property-nav {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-bottom: 24px;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, .28) transparent;
+}
+.property-nav::-webkit-scrollbar { width: 5px; }
+.property-nav::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .28); border-radius: 10px; }
+.stats-grid, .finance-stats { align-items: stretch; }
+.stat-card {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex-direction: column;
+  margin: 0;
+}
+.stat-icon {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  font-size: 20px;
+}
+.stat-icon svg { width: 22px; height: 22px; }
+.stat-top, .stat-foot, .section-heading p, .page-subtitle, .activity-sub, .unit-meta,
+.empty-state, .empty-state p {
+  color: #594a42;
+}
+.stat-value { margin-top: 14px; }
+.stat-foot { margin-top: auto; padding-top: 5px; }
+.stat-helper {
+  margin: 7px 0 0;
+  color: #594a42;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.empty-state p { font-size: .85rem; font-weight: 500; line-height: 1.4; }
+.dashboard-alerts {
+  margin-bottom: 18px;
+  padding: 18px;
+  border: 1px solid #e3c9a9;
+  border-radius: 14px;
+  background: #fffaf2;
+  box-shadow: var(--shadow);
+}
+.dashboard-alert-heading .eyebrow { color: #704b34; }
+.dashboard-alert-heading h2 { margin: 0 0 5px; color: #2d1b13; }
+.dashboard-alert-heading p { margin: 0; color: #594a42; font-size: 12px; }
+.dashboard-alert-list { display: grid; gap: 8px; margin: 14px 0 0; padding: 0; list-style: none; }
+.dashboard-alert-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 9px;
+  border-top: 1px solid #eadbc5;
+  color: #594a42;
+  font-size: 12px;
+}
+.dashboard-alert-item strong { color: #2d1b13; }
+@media (max-width: 576px) {
+  .dashboard-alert-item { align-items: flex-start; flex-direction: column; }
+  .dashboard-alert-item .button { min-height: 40px; }
+}
