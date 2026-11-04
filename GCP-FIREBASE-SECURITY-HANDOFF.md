@@ -41,6 +41,8 @@ API key Firebase web memang berada di klien. Pembatasan key mengurangi penyalahg
 ### 4. Variabel lingkungan
 
 1. Salin `.env.example` menjadi `.env` dan isi nilai Firebase untuk lingkungan lokal. File `.env` diabaikan Git.
-2. Atur variabel `VITE_FIREBASE_*` yang sama pada environment build/deployment produksi sebelum menjalankan `npm run build`.
+2. Untuk GitHub Pages, rotasi API key yang terekspos di Google Cloud Console terlebih dahulu. Tambahkan variabel repository berikut di GitHub → Settings → Secrets and variables → Actions → Variables: `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, dan `VITE_FIREBASE_APP_ID`. `VITE_FIREBASE_MEASUREMENT_ID` bersifat opsional.
 3. Jangan masukkan `.env` ke repository. Vite menyematkan nilai `VITE_*` ke kode browser saat build; nilai tersebut dapat dilihat pengguna dan tidak boleh dianggap rahasia.
-4. Jalankan `npm install`, lalu `npm run dev` untuk lokal. Gunakan `npm run build` untuk menghasilkan situs di `dist/`.
+4. Workflow `.github/workflows/deploy-pages.yml` membangun dan menerbitkan `dist/` pada GitHub Pages. Aktifkan Settings → Pages → Build and deployment → GitHub Actions.
+5. Tambahkan domain GitHub Pages situs ke Firebase Console → Authentication → Settings → Authorized domains, kemudian uji login setelah workflow berhasil.
+6. Jalankan `npm install`, lalu `npm run dev` untuk lokal. Gunakan `npm run build` untuk menghasilkan situs di `dist/`.

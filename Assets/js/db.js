@@ -134,6 +134,11 @@ function validateAmount(value, label = "Nominal") {
   return amount;
 }
 
+function validateDate(value, label) {
+  if (!isValidDateString(value)) throw new Error(`${label} harus berupa tanggal yang valid.`);
+  return value;
+}
+
 export const db = {
   replaceAll(data) {
     const initial = emptyData();
@@ -224,12 +229,29 @@ export const db = {
       id: makeId(),
       propertyId: input.propertyId,
       unitName,
-      type: ["Reguler", "Medium", "Large"].includes(input.type) ? input.type : "Reguler",
+      type: ["Reguler", "Medium", "Large", "VIP"].includes(input.type) ? input.type : "Reguler",
       price: validateAmount(input.price, "Harga sewa"),
       status: "VACANT"
     };
     writeData({ ...data, units: [...data.units, record] });
     return record;
+  },
+  updateUnit(unitId, input) {
+    const data = readData();
+    const unit = data.units.find((item) => item.id === unitId);
+    if (!unit) throw new Error("Unit tidak ditemukan.");
+    const unitName = validateText(input.unitName, "Nama unit");
+    if (data.units.some((item) =>
+      item.id !== unitId && item.propertyId === unit.propertyId &&
+      item.unitName.toLowerCase() === unitName.toLowerCase()
+    )) {
+      throw new Error("Nama unit sudah digunakan pada properti ini.");
+    }
+    unit.unitName = unitName;
+    unit.type = validateText(input.type, "Tipe unit");
+    unit.price = validateAmount(input.price, "Harga sewa");
+    writeData(data);
+    return unit;
   },
   nextUnitName(propertyId) {
     const data = readData();
@@ -259,13 +281,26 @@ export const db = {
     writeData(data);
     return record;
   },
+  updateTenant(tenantId, input) {
+    const data = readData();
+    const tenant = data.tenants.find((item) => item.id === tenantId);
+    if (!tenant) throw new Error("Data penyewa tidak ditemukan.");
+    tenant.name = validateText(input.name, "Nama penyewa");
+    tenant.whatsapp = validateText(input.whatsapp, "Nomor WhatsApp");
+    tenant.dueDate = validateDate(input.dueDate, "Tanggal jatuh tempo");
+    tenant.specialTerms = String(input.specialTerms ?? "").trim();
+    writeData(data);
+    return tenant;
+  },
   markPaymentPaid(tenantId, dueDate) {
     const data = readData();
     const tenant = data.tenants.find((item) => item.id === tenantId);
     if (!tenant) throw new Error("Data penyewa tidak ditemukan.");
     const unit = data.units.find((item) => item.id === tenant.unitId);
     if (!unit) throw new Error("Unit penyewa tidak ditemukan.");
-    const existing = data.payments.find((item) => isPaymentActive(item) && item.tenantId === tenantId && item.dueDate === dueDate);
+    const existing = data.payments.find((item) =>
+      isPaymentActive(item) && item.tenantId === tenantId && item.dueDate?.slice(0, 7) === dueDate.slice(0, 7)
+    );
     if (existing) return existing;
     const payment = {
       id: makeId(),

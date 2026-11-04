@@ -686,6 +686,8 @@ body::after {
   line-height: 1.4;
 }
 .empty-state p { font-size: .85rem; font-weight: 500; line-height: 1.4; }
+.unit-card.status-overdue-90 { border-color: #b42332; border-left-color: #8f1725; background-color: #fff1f0; }
+.badge-overdue-90 { color: #fff; background: #9f1d2b; }
 .dashboard-alerts {
   margin-bottom: 18px;
   padding: 18px;

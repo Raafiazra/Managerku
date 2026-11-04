@@ -15,7 +15,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { db, getCurrentAppDate, getLegacyData, isPaymentActive, setCloudSync, setUserStorageScope } from "./db.js";
 import { flushUserWrites, importUserData, loadUserData, saveUserData } from "./firestore.js";
-import { formatRupiah, getBillingMessage, getBillingStatus, getWhatsAppUrl } from "./billing.js";
+import { formatRupiah, getBillingMessage, getBillingStatus, getOverdueReminder, getWhatsAppUrl, isSeverelyOverdue } from "./billing.js";
 import { showAlert, showConfirm, showToast } from "./dialogs.js";
 import { setupPasswordToggles } from "./password-toggle.js";
 
@@ -81,6 +81,8 @@ function setAuthStatus(message, { retry = false, busy = false } = {}) {
 
 function authErrorMessage(error) {
   const messages = {
+    "auth/invalid-api-key": "Konfigurasi Firebase tidak valid. Periksa variabel VITE_FIREBASE_* pada GitHub Actions.",
+    "auth/unauthorized-domain": "Domain GitHub Pages belum ditambahkan ke Firebase Authentication > Authorized domains.",
     "auth/email-already-in-use": "Email ini sudah terdaftar.",
     "auth/invalid-email": "Format email tidak valid.",
     "auth/invalid-credential": "Email atau password salah.",
@@ -264,21 +266,26 @@ function unitCard(data, unit) {
   const property = data.propertyById.get(unit.propertyId);
   const tenant = tenantForUnit(data, unit);
   const status = statusForUnit(data, unit, tenant);
+  const criticalOverdue = tenant && isSeverelyOverdue(status);
+  const reminder = tenant ? getOverdueReminder(status) : null;
   const tenantInfo = tenant
-    ? `<div class="unit-tenant">${escapeHtml(tenant.name)} · ${escapeHtml(tenant.whatsapp)}</div><div class="unit-meta">Jatuh tempo ${dateLabel(status.dueDate)}</div>`
+    ? `<div class="unit-tenant">${escapeHtml(tenant.name)} · ${escapeHtml(tenant.whatsapp)}</div><div class="unit-meta">Jatuh tempo ${dateLabel(status.dueDate)}</div>${tenant.specialTerms ? `<div class="unit-meta">Ketentuan: ${escapeHtml(tenant.specialTerms)}</div>` : ""}${reminder ? `<div class="unit-meta">Pengingat ke-${reminder.number}${reminder.overdueDays ? ` · terlambat ${reminder.overdueDays} hari` : " · jatuh tempo hari ini"}</div>` : ""}`
     : `<div class="unit-tenant">Belum ada penyewa</div><div class="unit-meta">Tipe ${escapeHtml(unit.type)}</div>`;
   let actions = "";
   if (!tenant) {
     actions = `<button class="button button-primary" data-action="add-tenant" data-unit-id="${escapeHtml(unit.id)}">＋ Tambah penyewa</button>`;
+    actions += `<button class="button button-outline" data-action="edit-unit" data-unit-id="${escapeHtml(unit.id)}">Edit unit</button>`;
     actions += `<button class="button button-danger" data-action="delete-unit" data-unit-id="${escapeHtml(unit.id)}">Hapus unit</button>`;
   } else {
     actions = `<button class="button button-outline" data-action="whatsapp" data-tenant-id="${escapeHtml(tenant.id)}">Tagih via WA</button>`;
     if (status.code !== "PAID") actions += `<button class="button button-primary" data-action="mark-paid" data-tenant-id="${escapeHtml(tenant.id)}" data-due-date="${escapeHtml(status.dueDate)}">Tandai lunas</button>`;
+    actions += `<button class="button button-outline" data-action="edit-tenant" data-tenant-id="${escapeHtml(tenant.id)}">Edit penyewa</button>`;
+    actions += `<button class="button button-outline" data-action="edit-unit" data-unit-id="${escapeHtml(unit.id)}">Edit unit</button>`;
     actions += `<button class="button button-danger" data-action="remove-tenant" data-tenant-id="${escapeHtml(tenant.id)}">Checkout</button>`;
     actions += `<button class="button button-danger" data-action="delete-unit" data-unit-id="${escapeHtml(unit.id)}">Hapus unit</button>`;
   }
-  return `<article class="unit-card status-${status.code.toLowerCase().replaceAll("_", "-")}">
-    <div class="unit-card-top"><span class="unit-name">${escapeHtml(unit.unitName)}</span><span class="badge badge-${status.code.toLowerCase().replaceAll("_", "-")}">${statusText(status)}</span></div>
+  return `<article class="unit-card status-${status.code.toLowerCase().replaceAll("_", "-")}${criticalOverdue ? " status-overdue-90" : ""}">
+    <div class="unit-card-top"><span class="unit-name">${escapeHtml(unit.unitName)}</span><span class="badge ${criticalOverdue ? "badge-overdue-90" : `badge-${status.code.toLowerCase().replaceAll("_", "-")}`}">${criticalOverdue ? "MENUNGGAK 3+ BULAN" : statusText(status)}</span></div>
     ${tenantInfo}
     <div class="unit-price">${formatRupiah(unit.price)} <span class="unit-meta">/ bulan</span></div>
     <div class="unit-actions">${actions}</div>
@@ -325,13 +332,14 @@ function renderDashboard(data) {
     const tenant = tenantForUnit(data, unit);
     if (!tenant) return [];
     const status = getBillingStatus(tenant, paidPayments);
-    if (status.code !== "OVERDUE_L1" && status.code !== "OVERDUE_CRITICAL") return [];
-    return [{ unit, tenant, status, property: data.propertyById.get(unit.propertyId) }];
+    const reminder = getOverdueReminder(status);
+    if (!reminder) return [];
+    return [{ unit, tenant, status, reminder, property: data.propertyById.get(unit.propertyId) }];
   });
   const alerts = $("#dashboard-alerts");
   alerts.classList.toggle("hidden", !overdueTenants.length);
   alerts.innerHTML = overdueTenants.length
-    ? `<div class="dashboard-alert-heading"><div><p class="eyebrow">PERLU TINDAKAN</p><h2 id="dashboard-alerts-title">Perhatian Hari Ini</h2><p>${overdueTenants.length} penyewa memiliki pembayaran yang melewati jatuh tempo.</p></div></div><ul class="dashboard-alert-list">${overdueTenants.map(({ unit, tenant, status, property }) => `<li class="dashboard-alert-item"><span><strong>${escapeHtml(tenant.name)}</strong> · ${escapeHtml(property?.name ?? "Properti")} / ${escapeHtml(unit.unitName)} · ${Math.abs(status.daysUntilDue)} hari terlambat</span><button class="button button-outline button-sm" data-action="whatsapp" data-tenant-id="${escapeHtml(tenant.id)}">Ingatkan via WA</button></li>`).join("")}</ul>`
+    ? `<div class="dashboard-alert-heading"><div><p class="eyebrow">PENGINGAT JATUH TEMPO</p><h2 id="dashboard-alerts-title">Perlu ditindaklanjuti</h2><p>${overdueTenants.length} penyewa belum melunasi tagihan yang jatuh tempo. Pengingat berulang setiap 3 hari selama dashboard dibuka.</p></div></div><ul class="dashboard-alert-list">${overdueTenants.map(({ unit, tenant, status, reminder, property }) => `<li class="dashboard-alert-item"><span><strong>${escapeHtml(tenant.name)}</strong> · ${escapeHtml(property?.name ?? "Properti")} / ${escapeHtml(unit.unitName)} · Pengingat ke-${reminder.number}${reminder.overdueDays ? ` · ${reminder.overdueDays} hari terlambat` : " · jatuh tempo hari ini"}</span><button class="button button-outline button-sm" data-action="whatsapp" data-tenant-id="${escapeHtml(tenant.id)}">Ingatkan via WA</button></li>`).join("")}</ul>`
     : "";
 
   const dashboardUnits = $("#dashboard-units");
@@ -637,13 +645,25 @@ function openUnitModal(propertyId) {
     return;
   }
   const properties = data.properties.map((item) => ({ value: item.id, label: item.name }));
-  const typeOptions = ["Reguler", "Medium", "Large"].map((item) => ({ value: item, label: item }));
+  const typeOptions = ["Reguler", "Medium", "Large", "VIP"].map((item) => ({ value: item, label: item }));
   const fields = field("propertyId", "Properti", "select", { options: properties }) +
     field("unitName", "Nama unit (otomatis jika kosong)", "text", { required: false, placeholder: "Kamar 01 / Unit 1" }) +
     field("type", "Tipe unit", "select", { options: typeOptions }) +
     field("price", "Harga sewa per bulan (Rp)", "number", { min: "0", step: "1000", placeholder: "Contoh: 1200000" });
   openModal("Tambah unit", "Siapkan unit baru untuk disewakan.", fields, (values) => db.createUnit(values));
   if (propertyId) $("#field-propertyId").value = propertyId;
+}
+
+function openEditUnitModal(unitId) {
+  const unit = db.getById("units", unitId);
+  if (!unit) return showToast("Unit tidak ditemukan.");
+  const typeOptions = [...new Set(["Reguler", "Medium", "Large", "VIP", unit.type])]
+    .map((item) => ({ value: item, label: item }));
+  const fields = field("unitName", "Nama unit", "text", { value: unit.unitName }) +
+    field("type", "Tipe unit", "select", { options: typeOptions }) +
+    field("price", "Harga sewa per bulan (Rp)", "number", { min: "0", step: "1000", value: unit.price });
+  openModal("Edit unit", "Perbarui nama, tipe, atau harga sewa unit.", fields, (values) => db.updateUnit(unit.id, values));
+  $("#field-type").value = unit.type;
 }
 
 function openTenantModal(unitId) {
@@ -669,6 +689,21 @@ function openTenantModal(unitId) {
   openModal("Tambah penyewa", "Lengkapi data penyewa untuk mulai mengelola tagihan.", fields, (values) => db.createTenant({ ...values, unitId: unit?.id ?? values.unitId }));
   $("#field-startDate").value = dueDate;
   $("#field-dueDate").value = dueDate;
+}
+
+function openEditTenantModal(tenantId) {
+  const tenant = db.getById("tenants", tenantId);
+  if (!tenant) return showToast("Data penyewa tidak ditemukan.");
+  const fields = field("name", "Nama penyewa", "text", { value: tenant.name }) +
+    field("whatsapp", "Nomor WhatsApp", "tel", { value: tenant.whatsapp, placeholder: "08xxxxxxxxxx" }) +
+    field("dueDate", "Tanggal jatuh tempo rutin", "date", { value: tenant.dueDate }) +
+    field("specialTerms", "Harga / ketentuan khusus", "textarea", {
+      required: false,
+      full: true,
+      placeholder: "Catatan tarif atau kesepakatan khusus (opsional)"
+    });
+  openModal("Edit penyewa", "Koreksi data penyewa dan jatuh tempo. Catatan khusus tidak mengubah tarif tagihan; riwayat pembayaran tetap disimpan.", fields, (values) => db.updateTenant(tenant.id, values));
+  $("#field-specialTerms").value = tenant.specialTerms ?? "";
 }
 
 function openExpenseModal() {
@@ -757,6 +792,10 @@ async function handleAction(button) {
     openUnitModal(button.dataset.propertyId || (activePropertyId !== "all" ? activePropertyId : ""));
   } else if (action === "add-tenant") {
     openTenantModal(button.dataset.unitId);
+  } else if (action === "edit-unit") {
+    openEditUnitModal(button.dataset.unitId);
+  } else if (action === "edit-tenant") {
+    openEditTenantModal(button.dataset.tenantId);
   } else if (action === "add-expense") {
     openExpenseModal();
   } else if (action === "whatsapp") {

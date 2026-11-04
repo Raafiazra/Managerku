@@ -32,6 +32,8 @@
 - [x] `.env` dan file environment lokal diabaikan Git.
 - [x] Konfigurasi Firebase menggunakan variabel `VITE_FIREBASE_*`; `.env.example` hanya berisi nama variabel tanpa nilai proyek.
 - [x] Konfigurasi Firebase yang wajib tidak tersedia menghasilkan error konfigurasi yang jelas.
-- [ ] Admin mengatur `VITE_FIREBASE_*` pada environment build/deployment produksi.
+- [x] Workflow GitHub Pages memvalidasi konfigurasi Firebase sebelum build dan deployment.
+- [ ] Admin merotasi API key yang terekspos dan mengatur variabel GitHub Actions untuk build Pages.
+- [ ] Admin menambahkan domain GitHub Pages ke daftar Firebase Authentication Authorized domains.
 
 Vite menyematkan nilai `VITE_*` ke kode browser saat build; nilai ini tetap publik dan tidak boleh dianggap rahasia. API key klien bukan kontrol akses. Gunakan autentikasi, Firestore Rules, dan kontrol sisi server yang sesuai untuk melindungi data.

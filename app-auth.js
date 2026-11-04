@@ -10,6 +10,19 @@ const errorMessage = document.querySelector("#auth-error");
 const resetPasswordButton = document.querySelector("#reset-password-button");
 let registrationInProgress = false;
 
+function authErrorMessage(error) {
+  const messages = {
+    "auth/invalid-api-key": "Konfigurasi Firebase tidak valid. Periksa variabel VITE_FIREBASE_* pada GitHub Actions.",
+    "auth/unauthorized-domain": "Domain GitHub Pages belum ditambahkan ke Firebase Authentication > Authorized domains.",
+    "auth/invalid-credential": "Email atau password salah.",
+    "auth/user-disabled": "Akun ini dinonaktifkan.",
+    "auth/operation-not-allowed": "Metode Email/Password belum diaktifkan di Firebase Authentication.",
+    "auth/too-many-requests": "Terlalu banyak percobaan. Coba lagi beberapa saat.",
+    "auth/network-request-failed": "Tidak dapat terhubung ke Firebase. Periksa koneksi internet."
+  };
+  return messages[error?.code] ?? error?.message ?? "Autentikasi gagal. Silakan coba lagi.";
+}
+
 setupPasswordToggles();
 
 if (!form || !errorMessage) {
@@ -30,7 +43,7 @@ if (resetPasswordButton && loginForm) {
       await sendPasswordResetEmail(auth, emailInput.value.trim());
       errorMessage.textContent = "Jika akun dengan email tersebut terdaftar, tautan reset password akan dikirim.";
     } catch (error) {
-      errorMessage.textContent = `Gagal mengirim tautan reset password: ${error.message}`;
+      errorMessage.textContent = `Gagal mengirim tautan reset password: ${authErrorMessage(error)}`;
     } finally {
       resetPasswordButton.disabled = false;
     }
@@ -69,7 +82,7 @@ form.addEventListener("submit", async (event) => {
   } catch (error) {
     registrationInProgress = false;
     const action = loginForm ? "Login gagal" : "Gagal mendaftar";
-    errorMessage.textContent = `${action}: ${error.message}`;
+    errorMessage.textContent = `${action}: ${authErrorMessage(error)}`;
   } finally {
     button.disabled = false;
   }

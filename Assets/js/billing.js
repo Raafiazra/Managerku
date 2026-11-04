@@ -28,7 +28,9 @@ export function dayDifference(fromDate, toDate) {
 export function getBillingStatus(tenant, payments, today = getCurrentAppDate()) {
   let dueDate = tenant.dueDate;
   let cycle = 0;
-  const hasPayment = (date) => payments.some((payment) => payment.tenantId === tenant.id && payment.dueDate === date);
+  const hasPayment = (date) => payments.some((payment) =>
+    payment.tenantId === tenant.id && payment.dueDate?.slice(0, 7) === date.slice(0, 7)
+  );
 
   while (hasPayment(dueDate) && cycle < 240) {
     const nextDueDate = addMonthsClamped(tenant.dueDate, cycle + 1);
@@ -45,6 +47,21 @@ export function getBillingStatus(tenant, payments, today = getCurrentAppDate()) 
   if (daysUntilDue <= -7) return { code: "OVERDUE_CRITICAL", label: "TUNGGAKAN KRITIS", dueDate, daysUntilDue };
   if (daysUntilDue <= -3) return { code: "OVERDUE_L1", label: "TUNGGAKAN", dueDate, daysUntilDue };
   return { code: "UPCOMING", label: "BELUM JATUH TEMPO", dueDate, daysUntilDue };
+}
+
+export function getOverdueReminder(status) {
+  if (status.code === "PAID" || status.daysUntilDue > 0) return null;
+  const overdueDays = Math.max(0, -status.daysUntilDue);
+  if (overdueDays % 3 !== 0) return null;
+  return {
+    number: Math.floor(overdueDays / 3) + 1,
+    overdueDays,
+    daysUntilNext: 3
+  };
+}
+
+export function isSeverelyOverdue(status) {
+  return status.code !== "PAID" && status.daysUntilDue <= -90;
 }
 
 export function getBillingMessage(tenant, unit, property, status) {
