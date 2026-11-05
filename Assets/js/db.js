@@ -1,6 +1,4 @@
 const STORAGE_KEY = "kos-management-app-v1";
-let activeStorageKey = STORAGE_KEY;
-let cloudSync = null;
 
 const makeId = () => globalThis.crypto?.randomUUID?.() ??
   `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -25,12 +23,6 @@ function dateFromSettings(settings) {
     : deviceDateString();
 }
 
-export function getCurrentAppDate() {
-  const raw = localStorage.getItem(activeStorageKey);
-  if (!raw) return deviceDateString();
-  return dateFromSettings(JSON.parse(raw));
-}
-
 const emptyData = () => ({
   categories: [],
   properties: [],
@@ -43,84 +35,6 @@ const emptyData = () => ({
   customDate: null,
   activeYear: new Date().getFullYear()
 });
-
-function readData() {
-  try {
-    const raw = localStorage.getItem(activeStorageKey);
-    if (!raw) return emptyData();
-    const parsed = JSON.parse(raw);
-    const initial = emptyData();
-    const data = Object.fromEntries(Object.keys(initial).map((key) => [
-      key,
-      Array.isArray(initial[key])
-        ? (Array.isArray(parsed[key]) ? parsed[key] : [])
-        : key === "dateMode"
-          ? (parsed.dateMode === "custom" && isValidDateString(parsed.customDate) ? "custom" : "device")
-          : key === "customDate"
-            ? (isValidDateString(parsed.customDate) ? parsed.customDate : null)
-            : (Number.isInteger(parsed[key]) ? parsed[key] : initial[key])
-    ]));
-    data.activeYear = Number(dateFromSettings(data).slice(0, 4));
-    return data;
-  } catch (error) {
-    console.error("Tidak dapat membaca database lokal Managerku.", error);
-    throw new Error("Data lokal tidak dapat dibaca. Periksa penyimpanan browser Anda.");
-  }
-}
-
-function writeData(data, syncToCloud = true) {
-  try {
-    localStorage.setItem(activeStorageKey, JSON.stringify(data));
-  } catch (error) {
-    console.error("Tidak dapat menyimpan database lokal Managerku.", error);
-    throw new Error("Data gagal disimpan. Ruang penyimpanan browser mungkin penuh.");
-  }
-  if (syncToCloud && cloudSync) {
-    const { uid, save, onError } = cloudSync;
-    Promise.resolve()
-      .then(() => save(uid, structuredClone(data)))
-      .catch((error) => {
-        console.error("Sinkronisasi Firestore Managerku gagal.", error);
-        onError(error);
-      });
-  }
-}
-
-export function setUserStorageScope(uid = null) {
-  cloudSync = null;
-  activeStorageKey = uid ? `${STORAGE_KEY}:user:${uid}` : STORAGE_KEY;
-}
-
-export function getLegacyData() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return emptyData();
-    const parsed = JSON.parse(raw);
-    const initial = emptyData();
-    const data = Object.fromEntries(Object.keys(initial).map((key) => [
-      key,
-      Array.isArray(initial[key])
-        ? (Array.isArray(parsed[key]) ? parsed[key] : [])
-        : key === "dateMode"
-          ? (parsed.dateMode === "custom" && isValidDateString(parsed.customDate) ? "custom" : "device")
-          : key === "customDate"
-            ? (isValidDateString(parsed.customDate) ? parsed.customDate : null)
-            : (Number.isInteger(parsed[key]) ? parsed[key] : initial[key])
-    ]));
-    data.activeYear = Number(dateFromSettings(data).slice(0, 4));
-    return data;
-  } catch (error) {
-    console.error("Tidak dapat membaca database lokal lama Managerku.", error);
-    throw new Error("Data lokal lama tidak dapat dibaca. Periksa penyimpanan browser Anda.");
-  }
-}
-
-export function setCloudSync(uid, save, onError) {
-  if (!uid || typeof save !== "function" || typeof onError !== "function") {
-    throw new Error("Konfigurasi sinkronisasi Firestore tidak valid.");
-  }
-  cloudSync = { uid, save, onError };
-}
 
 function validateText(value, label) {
   const result = String(value ?? "").trim();
@@ -139,7 +53,104 @@ function validateDate(value, label) {
   return value;
 }
 
-export const db = {
+export class LocalDatabaseService {
+  #storage;
+  #activeStorageKey = STORAGE_KEY;
+  #cloudSync = null;
+
+  constructor(storage = null) {
+    this.#storage = storage;
+  }
+
+  #getStorage() {
+    const storage = this.#storage ?? globalThis.localStorage;
+    if (!storage) throw new Error("Penyimpanan lokal tidak tersedia.");
+    return storage;
+  }
+
+  getCurrentAppDate() {
+    const raw = this.#getStorage().getItem(this.#activeStorageKey);
+    if (!raw) return deviceDateString();
+    return dateFromSettings(JSON.parse(raw));
+  }
+
+  #readData() {
+    try {
+      const raw = this.#getStorage().getItem(this.#activeStorageKey);
+      if (!raw) return emptyData();
+      const parsed = JSON.parse(raw);
+      const initial = emptyData();
+      const data = Object.fromEntries(Object.keys(initial).map((key) => [
+        key,
+        Array.isArray(initial[key])
+          ? (Array.isArray(parsed[key]) ? parsed[key] : [])
+          : key === "dateMode"
+            ? (parsed.dateMode === "custom" && isValidDateString(parsed.customDate) ? "custom" : "device")
+            : key === "customDate"
+              ? (isValidDateString(parsed.customDate) ? parsed.customDate : null)
+              : (Number.isInteger(parsed[key]) ? parsed[key] : initial[key])
+      ]));
+      data.activeYear = Number(dateFromSettings(data).slice(0, 4));
+      return data;
+    } catch (error) {
+      console.error("Tidak dapat membaca database lokal Managerku.", error);
+      throw new Error("Data lokal tidak dapat dibaca. Periksa penyimpanan browser Anda.");
+    }
+  }
+
+  #writeData(data, syncToCloud = true) {
+    try {
+      this.#getStorage().setItem(this.#activeStorageKey, JSON.stringify(data));
+    } catch (error) {
+      console.error("Tidak dapat menyimpan database lokal Managerku.", error);
+      throw new Error("Data gagal disimpan. Ruang penyimpanan browser mungkin penuh.");
+    }
+    if (syncToCloud && this.#cloudSync) {
+      const { uid, save, onError } = this.#cloudSync;
+      Promise.resolve()
+        .then(() => save(uid, structuredClone(data)))
+        .catch((error) => {
+          console.error("Sinkronisasi Firestore Managerku gagal.", error);
+          onError(error);
+        });
+    }
+  }
+
+  setUserStorageScope(uid = null) {
+    this.#cloudSync = null;
+    this.#activeStorageKey = uid ? `${STORAGE_KEY}:user:${uid}` : STORAGE_KEY;
+  }
+
+  getLegacyData() {
+    try {
+      const raw = this.#getStorage().getItem(STORAGE_KEY);
+      if (!raw) return emptyData();
+      const parsed = JSON.parse(raw);
+      const initial = emptyData();
+      const data = Object.fromEntries(Object.keys(initial).map((key) => [
+        key,
+        Array.isArray(initial[key])
+          ? (Array.isArray(parsed[key]) ? parsed[key] : [])
+          : key === "dateMode"
+            ? (parsed.dateMode === "custom" && isValidDateString(parsed.customDate) ? "custom" : "device")
+            : key === "customDate"
+              ? (isValidDateString(parsed.customDate) ? parsed.customDate : null)
+              : (Number.isInteger(parsed[key]) ? parsed[key] : initial[key])
+      ]));
+      data.activeYear = Number(dateFromSettings(data).slice(0, 4));
+      return data;
+    } catch (error) {
+      console.error("Tidak dapat membaca database lokal lama Managerku.", error);
+      throw new Error("Data lokal lama tidak dapat dibaca. Periksa penyimpanan browser Anda.");
+    }
+  }
+
+  setCloudSync(uid, save, onError) {
+    if (!uid || typeof save !== "function" || typeof onError !== "function") {
+      throw new Error("Konfigurasi sinkronisasi Firestore tidak valid.");
+    }
+    this.#cloudSync = { uid, save, onError };
+  }
   replaceAll(data) {
     const initial = emptyData();
     const safeData = Object.fromEntries(Object.keys(initial).map((key) => [
@@ -153,39 +164,39 @@ export const db = {
             : (Number.isInteger(data?.[key]) ? data[key] : initial[key])
     ]));
     safeData.activeYear = Number(dateFromSettings(safeData).slice(0, 4));
-    writeData(safeData, false);
-  },
+    this.#writeData(safeData, false);
+  }
   getAll() {
-    return readData();
-  },
+    return this.#readData();
+  }
   getActiveYear() {
-    return Number(getCurrentAppDate().slice(0, 4));
-  },
+    return Number(this.getCurrentAppDate().slice(0, 4));
+  }
   setDateMode(mode, customDate = null) {
     if (mode !== "device" && mode !== "custom") throw new Error("Mode tanggal tidak valid.");
-    const data = readData();
+    const data = this.#readData();
     if (mode === "custom" && !isValidDateString(customDate)) throw new Error("Pilih tanggal kustom yang valid.");
     data.dateMode = mode;
     data.customDate = mode === "custom" ? customDate : null;
     data.activeYear = Number(dateFromSettings(data).slice(0, 4));
-    writeData(data);
-  },
+    this.#writeData(data);
+  }
   resetDateMode() {
-    db.setDateMode("device");
-  },
+    this.setDateMode("device");
+  }
   getById(collection, id) {
-    const data = readData();
+    const data = this.#readData();
     return data[collection]?.find((item) => item.id === id) ?? null;
-  },
+  }
   createCategory(input) {
-    const data = readData();
+    const data = this.#readData();
     const record = { id: makeId(), name: validateText(input.name, "Nama kategori") };
     data.categories.push(record);
-    writeData(data);
+    this.#writeData(data);
     return record;
-  },
+  }
   deleteCategory(categoryId) {
-    const data = readData();
+    const data = this.#readData();
     if (!data.categories.some((category) => category.id === categoryId)) throw new Error("Kategori tidak ditemukan.");
     const propertyIds = new Set(data.properties.filter((property) => property.categoryId === categoryId).map((property) => property.id));
     const unitIds = new Set(data.units.filter((unit) => propertyIds.has(unit.propertyId)).map((unit) => unit.id));
@@ -196,18 +207,18 @@ export const db = {
     data.payments = data.payments.filter((payment) => !propertyIds.has(payment.propertyId) && !unitIds.has(payment.unitId) && !tenantIds.has(payment.tenantId));
     data.expenses = data.expenses.filter((expense) => !propertyIds.has(expense.propertyId) && !unitIds.has(expense.unitId));
     data.categories = data.categories.filter((category) => category.id !== categoryId);
-    writeData(data);
-  },
+    this.#writeData(data);
+  }
   createProperty(input) {
-    const data = readData();
+    const data = this.#readData();
     if (!data.categories.some((item) => item.id === input.categoryId)) throw new Error("Pilih kategori yang valid.");
     const record = { id: makeId(), categoryId: input.categoryId, name: validateText(input.name, "Nama properti") };
     data.properties.push(record);
-    writeData(data);
+    this.#writeData(data);
     return record;
-  },
+  }
   deleteProperty(propertyId) {
-    const data = readData();
+    const data = this.#readData();
     if (!data.properties.some((property) => property.id === propertyId)) throw new Error("Properti tidak ditemukan.");
     const unitIds = new Set(data.units.filter((unit) => unit.propertyId === propertyId).map((unit) => unit.id));
     const tenantIds = new Set(data.tenants.filter((tenant) => unitIds.has(tenant.unitId)).map((tenant) => tenant.id));
@@ -216,10 +227,10 @@ export const db = {
     data.payments = data.payments.filter((payment) => payment.propertyId !== propertyId && !unitIds.has(payment.unitId) && !tenantIds.has(payment.tenantId));
     data.expenses = data.expenses.filter((expense) => expense.propertyId !== propertyId && !unitIds.has(expense.unitId));
     data.properties = data.properties.filter((property) => property.id !== propertyId);
-    writeData(data);
-  },
+    this.#writeData(data);
+  }
   createUnit(input) {
-    const data = readData();
+    const data = this.#readData();
     if (!data.properties.some((item) => item.id === input.propertyId)) throw new Error("Pilih properti yang valid.");
     const unitName = String(input.unitName ?? "").trim() || this.nextUnitName(input.propertyId);
     if (data.units.some((item) => item.propertyId === input.propertyId && item.unitName.toLowerCase() === unitName.toLowerCase())) {
@@ -233,11 +244,11 @@ export const db = {
       price: validateAmount(input.price, "Harga sewa"),
       status: "VACANT"
     };
-    writeData({ ...data, units: [...data.units, record] });
+    this.#writeData({ ...data, units: [...data.units, record] });
     return record;
-  },
+  }
   updateUnit(unitId, input) {
-    const data = readData();
+    const data = this.#readData();
     const unit = data.units.find((item) => item.id === unitId);
     if (!unit) throw new Error("Unit tidak ditemukan.");
     const unitName = validateText(input.unitName, "Nama unit");
@@ -250,20 +261,20 @@ export const db = {
     unit.unitName = unitName;
     unit.type = validateText(input.type, "Tipe unit");
     unit.price = validateAmount(input.price, "Harga sewa");
-    writeData(data);
+    this.#writeData(data);
     return unit;
-  },
+  }
   nextUnitName(propertyId) {
-    const data = readData();
+    const data = this.#readData();
     const units = data.units.filter((unit) => unit.propertyId === propertyId);
     const numericNames = units.map((unit) => Number(unit.unitName.match(/(\d+)$/)?.[1])).filter(Number.isFinite);
     const next = Math.max(0, ...numericNames) + 1;
     const propertyName = data.properties.find((item) => item.id === propertyId)?.name ?? "";
     const prefix = /bedakan|kontrakan/i.test(propertyName) ? "Unit " : "Kamar ";
     return `${prefix}${prefix === "Unit " ? next : String(next).padStart(2, "0")}`;
-  },
+  }
   createTenant(input) {
-    const data = readData();
+    const data = this.#readData();
     const unit = data.units.find((item) => item.id === input.unitId);
     if (!unit) throw new Error("Unit tidak ditemukan.");
     if (data.tenants.some((item) => item.unitId === input.unitId)) throw new Error("Unit ini masih memiliki penyewa aktif.");
@@ -278,22 +289,22 @@ export const db = {
     };
     unit.status = "OCCUPIED";
     data.tenants.push(record);
-    writeData(data);
+    this.#writeData(data);
     return record;
-  },
+  }
   updateTenant(tenantId, input) {
-    const data = readData();
+    const data = this.#readData();
     const tenant = data.tenants.find((item) => item.id === tenantId);
     if (!tenant) throw new Error("Data penyewa tidak ditemukan.");
     tenant.name = validateText(input.name, "Nama penyewa");
     tenant.whatsapp = validateText(input.whatsapp, "Nomor WhatsApp");
     tenant.dueDate = validateDate(input.dueDate, "Tanggal jatuh tempo");
     tenant.specialTerms = String(input.specialTerms ?? "").trim();
-    writeData(data);
+    this.#writeData(data);
     return tenant;
-  },
+  }
   markPaymentPaid(tenantId, dueDate) {
-    const data = readData();
+    const data = this.#readData();
     const tenant = data.tenants.find((item) => item.id === tenantId);
     if (!tenant) throw new Error("Data penyewa tidak ditemukan.");
     const unit = data.units.find((item) => item.id === tenant.unitId);
@@ -309,15 +320,15 @@ export const db = {
       propertyId: unit.propertyId,
       dueDate,
       amount: unit.price,
-      date: getCurrentAppDate(),
+      date: this.getCurrentAppDate(),
       description: `Sewa ${unit.unitName} - ${tenant.name}`
     };
     data.payments.push(payment);
-    writeData(data);
+    this.#writeData(data);
     return payment;
-  },
+  }
   cancelPayment(paymentId) {
-    const data = readData();
+    const data = this.#readData();
     const payment = data.payments.find((item) => item.id === paymentId);
     if (!payment) throw new Error("Transaksi pembayaran tidak ditemukan.");
     if (!isPaymentActive(payment)) throw new Error("Transaksi pembayaran ini sudah dibatalkan.");
@@ -337,11 +348,11 @@ export const db = {
       cancellationNote: "Dibatalkan oleh pengelola"
     };
     data.payments = data.payments.map((item) => item.id === paymentId ? cancelledPayment : item);
-    writeData(data);
+    this.#writeData(data);
     return cancelledPayment;
-  },
+  }
   createExpense(input) {
-    const data = readData();
+    const data = this.#readData();
     if (!["global", "property", "unit"].includes(input.scope)) throw new Error("Pilih cakupan pengeluaran yang valid.");
     if (input.scope !== "global" && !data.properties.some((item) => item.id === input.propertyId)) {
       throw new Error("Pilih properti yang valid.");
@@ -361,11 +372,11 @@ export const db = {
       date: input.date
     };
     data.expenses.push(record);
-    writeData(data);
+    this.#writeData(data);
     return record;
-  },
+  }
   removeTenant(tenantId) {
-    const data = readData();
+    const data = this.#readData();
     const tenant = data.tenants.find((item) => item.id === tenantId);
     if (!tenant) throw new Error("Data penyewa tidak ditemukan.");
     data.payments = data.payments.map((payment) =>
@@ -374,10 +385,10 @@ export const db = {
     data.tenants = data.tenants.filter((item) => item.id !== tenantId);
     const unit = data.units.find((item) => item.id === tenant.unitId);
     if (unit) unit.status = "VACANT";
-    writeData(data);
-  },
+    this.#writeData(data);
+  }
   deleteUnit(unitId) {
-    const data = readData();
+    const data = this.#readData();
     const unit = data.units.find((item) => item.id === unitId);
     if (!unit) throw new Error("Unit tidak ditemukan.");
 
@@ -394,10 +405,10 @@ export const db = {
         : expense
     );
     data.units = data.units.filter((item) => item.id !== unitId);
-    writeData(data);
-  },
+    this.#writeData(data);
+  }
   archiveAnnualReport(year) {
-    const data = readData();
+    const data = this.#readData();
     const reportYear = Number(year);
     if (!Number.isInteger(reportYear) || reportYear < 2000 || reportYear > 9999) throw new Error("Tahun laporan tidak valid.");
     if (data.archives.some((archive) => archive.year === reportYear)) throw new Error(`Laporan tahun ${reportYear} sudah diarsipkan.`);
@@ -459,13 +470,20 @@ export const db = {
       transactions
     };
     data.archives.push(report);
-    writeData(data);
+    this.#writeData(data);
     return report;
-  },
+  }
   deleteArchiveReport(reportId) {
-    const data = readData();
+    const data = this.#readData();
     if (!data.archives.some((archive) => archive.id === reportId)) throw new Error("Arsip laporan tidak ditemukan.");
     data.archives = data.archives.filter((archive) => archive.id !== reportId);
-    writeData(data);
-  },
-};
+    this.#writeData(data);
+  }
+}
+
+export const localDatabaseService = new LocalDatabaseService();
+export const db = localDatabaseService;
+export const getCurrentAppDate = () => localDatabaseService.getCurrentAppDate();
+export const setUserStorageScope = (...args) => localDatabaseService.setUserStorageScope(...args);
+export const getLegacyData = (...args) => localDatabaseService.getLegacyData(...args);
+export const setCloudSync = (...args) => localDatabaseService.setCloudSync(...args);

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { db, setUserStorageScope } from "../Assets/js/db.js";
+import { db, LocalDatabaseService, setUserStorageScope } from "../Assets/js/db.js";
 
 class MemoryStorage {
   values = new Map();
@@ -34,6 +34,20 @@ function createOccupiedUnit() {
   });
   return { unit, tenant };
 }
+
+test("LocalDatabaseService instances isolate storage and user scopes", () => {
+  const first = new LocalDatabaseService(new MemoryStorage());
+  const second = new LocalDatabaseService(new MemoryStorage());
+
+  first.setUserStorageScope("first-user");
+  first.createCategory({ name: "Properti pertama" });
+
+  assert.equal(first.getAll().categories.length, 1);
+  assert.equal(second.getAll().categories.length, 0);
+
+  first.setUserStorageScope("second-user");
+  assert.equal(first.getAll().categories.length, 0);
+});
 
 test("unit edits update valid details and reject duplicate names", () => {
   const { unit } = createOccupiedUnit();

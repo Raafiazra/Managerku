@@ -1,20 +1,10 @@
-import { auth } from "../../config/firebase.js";
-import {
-  browserLocalPersistence,
-  browserSessionPersistence,
-  EmailAuthProvider,
-  createUserWithEmailAndPassword,
-  onAuthStateChanged,
-  reauthenticateWithCredential,
-  sendPasswordResetEmail,
-  setPersistence,
-  signInWithEmailAndPassword,
-  signOut,
-  updatePassword,
-  updateProfile
-} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { db, getCurrentAppDate, getLegacyData, isPaymentActive, setCloudSync, setUserStorageScope } from "./db.js";
-import { flushUserWrites, importUserData, loadUserData, saveUserData } from "./firestore.js";
+import { authService } from "../../src/services/auth-service.js";
+import { authErrorMessage } from "../../src/services/auth-error-message.js";
+import { DashboardController } from "../../src/controllers/dashboard-controller.js";
+import { WorkspaceController } from "../../src/controllers/workspace-controller.js";
+import { firestoreService } from "../../src/services/firestore-service.js";
+import { getCurrentAppDate, isPaymentActive, localDatabaseService } from "./db.js";
+import { flushUserWrites } from "./firestore.js";
 import { formatRupiah, getBillingMessage, getBillingStatus, getOverdueReminder, getWhatsAppUrl, isSeverelyOverdue } from "./billing.js";
 import { showAlert, showConfirm, showToast } from "./dialogs.js";
 import { setupPasswordToggles } from "./password-toggle.js";
@@ -50,7 +40,6 @@ let activeView = "dashboard";
 let activePropertyId = "all";
 let annualYear = null;
 let authenticatedUser = null;
-let authLoadGeneration = 0;
 
 function setAuthTab(tab) {
   const isLogin = tab === "login";
@@ -79,73 +68,45 @@ function setAuthStatus(message, { retry = false, busy = false } = {}) {
   $$("[data-auth-tab]").forEach((tab) => { tab.disabled = busy; });
 }
 
-function authErrorMessage(error) {
-  const messages = {
-    "auth/invalid-api-key": "Konfigurasi Firebase tidak valid. Periksa variabel VITE_FIREBASE_* pada GitHub Actions.",
-    "auth/unauthorized-domain": "Domain GitHub Pages belum ditambahkan ke Firebase Authentication > Authorized domains.",
-    "auth/email-already-in-use": "Email ini sudah terdaftar.",
-    "auth/invalid-email": "Format email tidak valid.",
-    "auth/invalid-credential": "Email atau password salah.",
-    "auth/wrong-password": "Password saat ini salah.",
-    "auth/requires-recent-login": "Sesi sudah lama. Keluar lalu masuk kembali sebelum mengganti password.",
-    "auth/user-disabled": "Akun ini dinonaktifkan.",
-    "auth/weak-password": "Password terlalu lemah. Gunakan minimal 8 karakter.",
-    "auth/too-many-requests": "Terlalu banyak percobaan. Coba lagi beberapa saat.",
-    "auth/network-request-failed": "Tidak dapat terhubung. Periksa jaringan internet Anda.",
-    "auth/operation-not-allowed": "Email/Password belum diaktifkan pada Firebase Authentication.",
-    "permission-denied": "Akses Firestore ditolak. Pastikan firestore.rules sudah dipublikasikan.",
-    "unauthenticated": "Sesi autentikasi berakhir. Silakan masuk kembali."
-  };
-  return messages[error?.code] ?? error?.message ?? "Autentikasi gagal. Silakan coba lagi.";
-}
-
-function hasLocalBusinessData(data) {
-  return ["categories", "properties", "units", "tenants", "expenses", "payments", "archives"]
-    .some((key) => data[key]?.length > 0);
-}
-
-async function initializeAuthenticatedSession(user) {
-  const generation = ++authLoadGeneration;
-  authenticatedUser = user;
-  setAuthOverlayVisible(true);
-  setAuthStatus("Memuat data akun dari Firestore...", { busy: true });
-
-  try {
-    const legacyData = getLegacyData();
-    setUserStorageScope(user.uid);
-    const cloud = await loadUserData(user.uid);
-    if (generation !== authLoadGeneration) return;
-
-    let accountData = cloud.data;
-    if (!cloud.hasRecords && hasLocalBusinessData(legacyData) &&
-      await showConfirm({
-        title: "Impor data lokal?",
-        message: "Ditemukan data Managerku lokal pada perangkat ini. Impor data tersebut ke akun Firebase Anda?",
-        subtext: "Data lokal asli tetap disimpan.",
-        actionLabel: "Impor Data"
-      })) {
-      await importUserData(user.uid, legacyData);
-      accountData = legacyData;
-    }
-
-    if (generation !== authLoadGeneration) return;
-    db.replaceAll(accountData);
-    setCloudSync(user.uid, saveUserData, (error) => {
-      showToast(`Perubahan tersimpan di perangkat, tetapi gagal disinkronkan ke cloud. ${authErrorMessage(error)}`);
-    });
+const dashboardController = new DashboardController({
+  authService,
+  databaseService: localDatabaseService,
+  firestoreService,
+  confirmLocalImport: () => showConfirm({
+    title: "Impor data lokal?",
+    message: "Ditemukan data Managerku lokal pada perangkat ini. Impor data tersebut ke akun Firebase Anda?",
+    subtext: "Data lokal asli tetap disimpan.",
+    actionLabel: "Impor Data"
+  }),
+  onLoading(user) {
+    authenticatedUser = user;
+    setAuthOverlayVisible(true);
+    setAuthStatus("Memuat data akun dari Firestore...", { busy: true });
+  },
+  onReady(user) {
     $("#auth-user-name").textContent = user.displayName || "Pengelola";
     $("#auth-user-email").textContent = user.email || "Akun Firebase";
     setAuthStatus("");
     setAuthOverlayVisible(false);
     render();
-  } catch (error) {
-    if (generation !== authLoadGeneration) return;
+  },
+  onError(error) {
     console.error("Tidak dapat memuat workspace Firestore Managerku.", error);
-    setUserStorageScope(null);
     setAuthStatus(`Data akun gagal dimuat. ${authErrorMessage(error)}`, { retry: true });
     setAuthOverlayVisible(true);
+  },
+  onSyncError(error) {
+    showToast(`Perubahan tersimpan di perangkat, tetapi gagal disinkronkan ke cloud. ${authErrorMessage(error)}`);
+  },
+  onUnauthenticated() {
+    authenticatedUser = null;
+    localDatabaseService.setUserStorageScope(null);
+    setAuthTab("login");
+    setAuthOverlayVisible(true);
+    setAuthStatus("");
   }
-}
+});
+const workspaceController = new WorkspaceController(localDatabaseService);
 
 function setMobileSidebarOpen(open) {
   document.body.classList.toggle("sidebar-open", open);
@@ -155,7 +116,7 @@ function setMobileSidebarOpen(open) {
 }
 
 function dataWithRelations() {
-  const data = db.getAll();
+  const data = workspaceController.getAll();
   return {
     ...data,
     propertyById: new Map(data.properties.map((item) => [item.id, item])),
@@ -605,9 +566,8 @@ function openChangePasswordModal() {
     submitButton.disabled = true;
     error.textContent = "";
     try {
-      const credential = EmailAuthProvider.credential(authenticatedUser.email, currentPassword);
-      await reauthenticateWithCredential(authenticatedUser, credential);
-      await updatePassword(authenticatedUser, newPassword);
+      await authService.reauthenticate(authenticatedUser, currentPassword);
+      await authService.changePassword(authenticatedUser, newPassword);
       close();
       showToast("Password berhasil diperbarui.");
     } catch (caughtError) {
@@ -620,12 +580,12 @@ function openChangePasswordModal() {
 
 function openCategoryModal() {
   openModal("Tambah kategori", "Buat kelompok untuk mengatur properti Anda.", field("name", "Nama kategori", "text", { placeholder: "Contoh: Kos Putra", full: true }), (values) => {
-    db.createCategory(values);
+    workspaceController.createCategory(values);
   });
 }
 
 function openPropertyModal(categoryId) {
-  const data = db.getAll();
+  const data = workspaceController.getAll();
   if (!data.categories.length) {
     openCategoryModal();
     showToast("Buat kategori terlebih dahulu.");
@@ -633,12 +593,12 @@ function openPropertyModal(categoryId) {
   }
   const categories = data.categories.map((item) => ({ value: item.id, label: item.name }));
   const select = field("categoryId", "Kategori", "select", { options: categories });
-  openModal("Tambah properti", "Tambahkan properti baru ke dalam kategori.", select + field("name", "Nama properti", "text", { placeholder: "Contoh: Kos Putra 1" }), (values) => db.createProperty(values));
+  openModal("Tambah properti", "Tambahkan properti baru ke dalam kategori.", select + field("name", "Nama properti", "text", { placeholder: "Contoh: Kos Putra 1" }), (values) => workspaceController.createProperty(values));
   if (categoryId) $("#field-categoryId").value = categoryId;
 }
 
 function openUnitModal(propertyId) {
-  const data = db.getAll();
+  const data = workspaceController.getAll();
   if (!data.properties.length) {
     openPropertyModal();
     showToast("Buat properti terlebih dahulu.");
@@ -650,24 +610,24 @@ function openUnitModal(propertyId) {
     field("unitName", "Nama unit (otomatis jika kosong)", "text", { required: false, placeholder: "Kamar 01 / Unit 1" }) +
     field("type", "Tipe unit", "select", { options: typeOptions }) +
     field("price", "Harga sewa per bulan (Rp)", "number", { min: "0", step: "1000", placeholder: "Contoh: 1200000" });
-  openModal("Tambah unit", "Siapkan unit baru untuk disewakan.", fields, (values) => db.createUnit(values));
+  openModal("Tambah unit", "Siapkan unit baru untuk disewakan.", fields, (values) => workspaceController.createUnit(values));
   if (propertyId) $("#field-propertyId").value = propertyId;
 }
 
 function openEditUnitModal(unitId) {
-  const unit = db.getById("units", unitId);
+  const unit = workspaceController.getById("units", unitId);
   if (!unit) return showToast("Unit tidak ditemukan.");
   const typeOptions = [...new Set(["Reguler", "Medium", "Large", "VIP", unit.type])]
     .map((item) => ({ value: item, label: item }));
   const fields = field("unitName", "Nama unit", "text", { value: unit.unitName }) +
     field("type", "Tipe unit", "select", { options: typeOptions }) +
     field("price", "Harga sewa per bulan (Rp)", "number", { min: "0", step: "1000", value: unit.price });
-  openModal("Edit unit", "Perbarui nama, tipe, atau harga sewa unit.", fields, (values) => db.updateUnit(unit.id, values));
+  openModal("Edit unit", "Perbarui nama, tipe, atau harga sewa unit.", fields, (values) => workspaceController.updateUnit(unit.id, values));
   $("#field-type").value = unit.type;
 }
 
 function openTenantModal(unitId) {
-  const data = db.getAll();
+  const data = workspaceController.getAll();
   const unit = data.units.find((item) => item.id === unitId);
   if (unitId && !unit) return showToast("Unit tidak ditemukan.");
   const availableUnits = data.units.filter((item) =>
@@ -686,13 +646,13 @@ function openTenantModal(unitId) {
     field("whatsapp", "Nomor WhatsApp", "tel", { placeholder: "08xxxxxxxxxx" }) +
     field("startDate", "Tanggal masuk", "date", { value: dueDate }) +
     field("dueDate", "Jatuh tempo rutin", "date", { value: dueDate });
-  openModal("Tambah penyewa", "Lengkapi data penyewa untuk mulai mengelola tagihan.", fields, (values) => db.createTenant({ ...values, unitId: unit?.id ?? values.unitId }));
+  openModal("Tambah penyewa", "Lengkapi data penyewa untuk mulai mengelola tagihan.", fields, (values) => workspaceController.createTenant({ ...values, unitId: unit?.id ?? values.unitId }));
   $("#field-startDate").value = dueDate;
   $("#field-dueDate").value = dueDate;
 }
 
 function openEditTenantModal(tenantId) {
-  const tenant = db.getById("tenants", tenantId);
+  const tenant = workspaceController.getById("tenants", tenantId);
   if (!tenant) return showToast("Data penyewa tidak ditemukan.");
   const fields = field("name", "Nama penyewa", "text", { value: tenant.name }) +
     field("whatsapp", "Nomor WhatsApp", "tel", { value: tenant.whatsapp, placeholder: "08xxxxxxxxxx" }) +
@@ -702,12 +662,12 @@ function openEditTenantModal(tenantId) {
       full: true,
       placeholder: "Catatan tarif atau kesepakatan khusus (opsional)"
     });
-  openModal("Edit penyewa", "Koreksi data penyewa dan jatuh tempo. Catatan khusus tidak mengubah tarif tagihan; riwayat pembayaran tetap disimpan.", fields, (values) => db.updateTenant(tenant.id, values));
+  openModal("Edit penyewa", "Koreksi data penyewa dan jatuh tempo. Catatan khusus tidak mengubah tarif tagihan; riwayat pembayaran tetap disimpan.", fields, (values) => workspaceController.updateTenant(tenant.id, values));
   $("#field-specialTerms").value = tenant.specialTerms ?? "";
 }
 
 function openExpenseModal() {
-  const data = db.getAll();
+  const data = workspaceController.getAll();
   const fields = field("scope", "Cakupan pengeluaran", "select", { options: [
     { value: "unit", label: "Unit tertentu" },
     { value: "property", label: "Tingkat properti" },
@@ -719,7 +679,7 @@ function openExpenseModal() {
   field("amount", "Nominal (Rp)", "number", { min: "0", step: "1000", placeholder: "Contoh: 300000" }) +
   field("date", "Tanggal", "date", { value: today() }) +
   field("description", "Deskripsi", "textarea", { full: true, placeholder: "Jelaskan pengeluaran..." });
-  openModal("Catat pengeluaran", "Tentukan ruang lingkup biaya agar laporan tetap akurat.", fields, (values) => db.createExpense(values));
+  openModal("Catat pengeluaran", "Tentukan ruang lingkup biaya agar laporan tetap akurat.", fields, (values) => workspaceController.createExpense(values));
   $("#field-date").value = today();
   const updateScope = () => {
     const global = $("#field-scope").value === "global";
@@ -752,7 +712,7 @@ async function handleAction(button) {
   if (action === "add-category") {
     openCategoryModal();
   } else if (action === "delete-category") {
-    const data = db.getAll();
+    const data = workspaceController.getAll();
     const category = data.categories.find((item) => item.id === button.dataset.categoryId);
     if (category && await showConfirm({
       title: "Hapus kategori?",
@@ -761,7 +721,7 @@ async function handleAction(button) {
       actionLabel: "Ya, Hapus"
     })) {
       try {
-        db.deleteCategory(category.id);
+        workspaceController.deleteCategory(category.id);
         activePropertyId = "all";
         render();
         showToast("Kategori dan seluruh data turunannya berhasil dihapus.");
@@ -772,7 +732,7 @@ async function handleAction(button) {
   } else if (action === "add-property") {
     openPropertyModal(button.dataset.categoryId);
   } else if (action === "delete-property") {
-    const property = db.getAll().properties.find((item) => item.id === button.dataset.propertyId);
+    const property = workspaceController.getAll().properties.find((item) => item.id === button.dataset.propertyId);
     if (property && await showConfirm({
       title: "Hapus properti?",
       message: `Hapus properti "${property.name}" beserta seluruh unit, penyewa, dan transaksinya?`,
@@ -780,7 +740,7 @@ async function handleAction(button) {
       actionLabel: "Ya, Hapus"
     })) {
       try {
-        db.deleteProperty(property.id);
+        workspaceController.deleteProperty(property.id);
         if (activePropertyId === property.id) activePropertyId = "all";
         render();
         showToast("Properti dan seluruh data turunannya berhasil dihapus.");
@@ -802,14 +762,14 @@ async function handleAction(button) {
     handleWhatsApp(button.dataset.tenantId);
   } else if (action === "mark-paid") {
     try {
-      db.markPaymentPaid(button.dataset.tenantId, button.dataset.dueDate);
+      workspaceController.markPaymentPaid(button.dataset.tenantId, button.dataset.dueDate);
       render();
       showToast("Pembayaran ditandai lunas dan pemasukan dicatat.");
     } catch (error) {
       showToast(error.message);
     }
   } else if (action === "cancel-payment") {
-    const payment = db.getById("payments", button.dataset.paymentId);
+    const payment = workspaceController.getById("payments", button.dataset.paymentId);
     if (payment && isPaymentActive(payment) && await showConfirm({
       title: "Batalkan pembayaran?",
       message: `Batalkan pembayaran "${payment.description}" sebesar ${formatRupiah(payment.amount)}?`,
@@ -817,7 +777,7 @@ async function handleAction(button) {
       actionLabel: "Ya, Batalkan"
     })) {
       try {
-        db.cancelPayment(payment.id);
+        workspaceController.cancelPayment(payment.id);
         render();
         showToast("Pembayaran dibatalkan. Unit dan penyewa tetap aktif.");
       } catch (error) {
@@ -825,7 +785,7 @@ async function handleAction(button) {
       }
     }
   } else if (action === "remove-tenant") {
-    const tenant = db.getAll().tenants.find((item) => item.id === button.dataset.tenantId);
+    const tenant = workspaceController.getAll().tenants.find((item) => item.id === button.dataset.tenantId);
     if (tenant && await showConfirm({
       title: "Checkout penyewa?",
       message: `Checkout ${tenant.name}?`,
@@ -833,7 +793,7 @@ async function handleAction(button) {
       actionLabel: "Ya, Checkout"
     })) {
       try {
-        db.removeTenant(tenant.id);
+        workspaceController.removeTenant(tenant.id);
         render();
         showToast("Penyewa checkout. Riwayat pembayaran tetap tersimpan.");
       } catch (error) {
@@ -841,7 +801,7 @@ async function handleAction(button) {
       }
     }
   } else if (action === "delete-unit") {
-    const unit = db.getAll().units.find((item) => item.id === button.dataset.unitId);
+    const unit = workspaceController.getAll().units.find((item) => item.id === button.dataset.unitId);
     if (unit && await showConfirm({
       title: "Hapus unit?",
       message: "Apakah Anda yakin ingin menghapus Unit/Kamar ini?",
@@ -849,7 +809,7 @@ async function handleAction(button) {
       actionLabel: "Ya, Hapus"
     })) {
       try {
-        db.deleteUnit(unit.id);
+        workspaceController.deleteUnit(unit.id);
         render();
         showToast("Unit berhasil dihapus. Data penyewa dibersihkan dan riwayat keuangan dipertahankan.");
       } catch (error) {
@@ -859,22 +819,22 @@ async function handleAction(button) {
   } else if (action === "archive-year") {
     const year = Number($("#annual-year").value);
     try {
-      const report = db.archiveAnnualReport(year);
+      const report = workspaceController.archiveAnnualReport(year);
       downloadArchiveReport(report);
       render();
       await showAlert({
         title: "Laporan berhasil diarsipkan",
         message: `Laporan tahun ${year} berhasil diarsipkan dan diunduh sebagai JSON.`,
-        subtext: `Tanggal aplikasi tetap mengikuti ${db.getAll().dateMode === "custom" ? "tanggal kustom yang dipilih" : "kalender perangkat"}. Riwayat transaksi tidak dihapus.`
+        subtext: `Tanggal aplikasi tetap mengikuti ${workspaceController.getAll().dateMode === "custom" ? "tanggal kustom yang dipilih" : "kalender perangkat"}. Riwayat transaksi tidak dihapus.`
       });
     } catch (error) {
       showToast(error.message || "Rekap tahunan gagal dibuat.");
     }
   } else if (action === "view-archive") {
-    const archive = db.getAll().archives.find((item) => item.id === button.dataset.archiveId);
+    const archive = workspaceController.getAll().archives.find((item) => item.id === button.dataset.archiveId);
     if (archive) openArchiveDetails(archive);
   } else if (action === "delete-archive") {
-    const archive = db.getAll().archives.find((item) => item.id === button.dataset.archiveId);
+    const archive = workspaceController.getAll().archives.find((item) => item.id === button.dataset.archiveId);
     if (archive && await showConfirm({
       title: "Hapus arsip?",
       message: `Hapus arsip Laporan Rekapitulasi ${archive.year}?`,
@@ -882,7 +842,7 @@ async function handleAction(button) {
       actionLabel: "Ya, Hapus"
     })) {
       try {
-        db.deleteArchiveReport(archive.id);
+        workspaceController.deleteArchiveReport(archive.id);
         render();
         showToast(`Arsip tahun ${archive.year} dihapus.`);
       } catch (error) {
@@ -891,7 +851,7 @@ async function handleAction(button) {
     }
   } else if (action === "reset-date") {
     try {
-      db.resetDateMode();
+      workspaceController.resetDateMode();
       render();
       showToast("Tanggal aplikasi kembali mengikuti tanggal perangkat.");
     } catch (error) {
@@ -957,9 +917,9 @@ $("#date-mode").addEventListener("change", (event) => {
     if (event.target.value === "custom") {
       const currentDate = getCurrentAppDate();
       $("#app-date-picker").value = currentDate;
-      db.setDateMode("custom", currentDate);
+      workspaceController.setDateMode("custom", currentDate);
     } else {
-      db.resetDateMode();
+      workspaceController.resetDateMode();
     }
     render();
   } catch (error) {
@@ -969,7 +929,7 @@ $("#date-mode").addEventListener("change", (event) => {
 });
 $("#app-date-picker").addEventListener("change", (event) => {
   try {
-    db.setDateMode("custom", event.target.value);
+    workspaceController.setDateMode("custom", event.target.value);
     render();
     showToast(`Tanggal aplikasi diatur ke ${dateLabel(event.target.value)}.`);
   } catch (error) {
@@ -993,7 +953,7 @@ $("#forgot-password-link").addEventListener("click", (event) => {
     return;
   }
   setAuthStatus("Mengirim tautan reset password...");
-  sendPasswordResetEmail(auth, email)
+  authService.sendPasswordReset(email)
     .then(() => setAuthStatus("Tautan reset password berhasil dikirim jika email terdaftar."))
     .catch((error) => setAuthStatus(authErrorMessage(error)));
 });
@@ -1001,9 +961,11 @@ $("#login-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   setAuthStatus("Memproses login...", { busy: true });
   try {
-    const persistence = $("#remember-me").checked ? browserLocalPersistence : browserSessionPersistence;
-    await setPersistence(auth, persistence);
-    await signInWithEmailAndPassword(auth, $("#input-login-email").value.trim(), $("#input-login-password").value);
+    await authService.signIn(
+      $("#input-login-email").value.trim(),
+      $("#input-login-password").value,
+      $("#remember-me").checked
+    );
   } catch (error) {
     setAuthStatus(authErrorMessage(error));
   }
@@ -1020,12 +982,11 @@ $("#register-form").addEventListener("submit", async (event) => {
   confirmation.setCustomValidity("");
   setAuthStatus("Membuat akun...", { busy: true });
   try {
-    const credential = await createUserWithEmailAndPassword(
-      auth,
+    const credential = await authService.createAccount(
       $("#input-register-email").value.trim(),
       password.value
     );
-    await updateProfile(credential.user, { displayName: $("#input-register-name").value.trim() });
+    await authService.updateProfile(credential.user, { displayName: $("#input-register-name").value.trim() });
   } catch (error) {
     setAuthStatus(authErrorMessage(error));
   }
@@ -1034,7 +995,7 @@ $("#input-register-confirm-password").addEventListener("input", (event) => {
   event.currentTarget.setCustomValidity("");
 });
 $("#auth-retry-button").addEventListener("click", () => {
-  if (auth.currentUser) initializeAuthenticatedSession(auth.currentUser);
+  if (authService.currentUser) dashboardController.initializeAuthenticatedSession(authService.currentUser);
 });
 $("#change-password-button").addEventListener("click", openChangePasswordModal);
 $("#logout-button").addEventListener("click", async () => {
@@ -1046,27 +1007,14 @@ $("#logout-button").addEventListener("click", async () => {
     showToast(`Sebagian data mungkin belum tersinkron. ${authErrorMessage(error)}`);
   }
   try {
-    await signOut(auth);
-    window.location.href = "login.html";
+    await authService.signOut();
   } catch (error) {
     showToast(authErrorMessage(error));
   }
 });
 
-onAuthStateChanged(auth, (user) => {
-  if (user) {
-    initializeAuthenticatedSession(user);
-    return;
-  }
-  authLoadGeneration += 1;
-  authenticatedUser = null;
-  setUserStorageScope(null);
-  setAuthTab("login");
-  setAuthOverlayVisible(true);
-  setAuthStatus("");
-  window.location.replace("login.html");
-});
+dashboardController.observeAuthentication();
 
 window.setInterval(() => {
-  if (authenticatedUser && db.getAll().dateMode === "device") render();
+  if (authenticatedUser && workspaceController.getAll().dateMode === "device") render();
 }, 60_000);
