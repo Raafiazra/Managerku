@@ -387,6 +387,24 @@ export class LocalDatabaseService {
     if (unit) unit.status = "VACANT";
     this.#writeData(data);
   }
+  cancelRental(tenantId) {
+    const data = this.#readData();
+    const tenant = data.tenants.find((item) => item.id === tenantId);
+    if (!tenant) throw new Error("Data penyewa tidak ditemukan.");
+    const hasPaymentHistory = data.payments.some((payment) => payment.tenantId === tenantId) ||
+      data.archives.some((archive) => archive.transactions?.some((transaction) =>
+        transaction.type === "income" && transaction.tenantId === tenantId
+      ));
+    if (hasPaymentHistory) {
+      throw new Error("Penyewa ini sudah memiliki riwayat pembayaran. Gunakan Checkout agar riwayat tetap tersimpan.");
+    }
+
+    data.tenants = data.tenants.filter((item) => item.id !== tenantId);
+    const unit = data.units.find((item) => item.id === tenant.unitId);
+    if (unit) unit.status = "VACANT";
+    this.#writeData(data);
+    return tenant;
+  }
   deleteUnit(unitId) {
     const data = this.#readData();
     const unit = data.units.find((item) => item.id === unitId);
@@ -407,12 +425,7 @@ export class LocalDatabaseService {
     data.units = data.units.filter((item) => item.id !== unitId);
     this.#writeData(data);
   }
-  archiveAnnualReport(year) {
-    const data = this.#readData();
-    const reportYear = Number(year);
-    if (!Number.isInteger(reportYear) || reportYear < 2000 || reportYear > 9999) throw new Error("Tahun laporan tidak valid.");
-    if (data.archives.some((archive) => archive.year === reportYear)) throw new Error(`Laporan tahun ${reportYear} sudah diarsipkan.`);
-
+  #buildAnnualReport(data, reportYear) {
     const properties = new Map(data.properties.map((property) => [property.id, property]));
     const categories = new Map(data.categories.map((category) => [category.id, category]));
     const units = new Map(data.units.map((unit) => [unit.id, unit]));
@@ -436,6 +449,7 @@ export class LocalDatabaseService {
           propertyId: payment.propertyId ?? unit?.propertyId ?? null,
           propertyName: property?.name ?? payment.propertyName ?? "Properti dihapus",
           categoryName: category?.name ?? payment.categoryName ?? "Tanpa kategori",
+          tenantId: payment.tenantId ?? null,
           unitName: unit?.unitName ?? payment.unitName ?? null,
           tenantName: tenant?.name ?? payment.tenantName ?? null
         };
@@ -469,9 +483,74 @@ export class LocalDatabaseService {
       counts: { income: payments.length, expenses: expenses.length },
       transactions
     };
+    return report;
+  }
+  archiveAnnualReport(year) {
+    const data = this.#readData();
+    const reportYear = Number(year);
+    if (!Number.isInteger(reportYear) || reportYear < 2000 || reportYear > 9999) throw new Error("Tahun laporan tidak valid.");
+    if (data.archives.some((archive) => archive.year === reportYear)) throw new Error(`Laporan tahun ${reportYear} sudah diarsipkan.`);
+
+    const report = this.#buildAnnualReport(data, reportYear);
     data.archives.push(report);
     this.#writeData(data);
     return report;
+  }
+  closeAnnualBooks(year) {
+    const data = this.#readData();
+    const reportYear = Number(year);
+    if (!Number.isInteger(reportYear) || reportYear < 2000 || reportYear > 9999) throw new Error("Tahun laporan tidak valid.");
+    if (data.archives.some((archive) => archive.year === reportYear)) throw new Error(`Laporan tahun ${reportYear} sudah diarsipkan.`);
+
+    const yearsToArchive = new Set([reportYear]);
+    data.payments.filter(isPaymentActive).forEach((payment) => {
+      if (!isValidDateString(payment.date)) throw new Error("Ada pembayaran aktif tanpa tanggal valid; tutup buku dibatalkan agar data tidak hilang.");
+      const paymentYear = Number(payment.date?.slice(0, 4));
+      if (paymentYear < 2000) throw new Error("Ada pembayaran aktif sebelum tahun 2000; tutup buku dibatalkan agar data tidak hilang.");
+      if (Number.isInteger(paymentYear)) yearsToArchive.add(paymentYear);
+    });
+    data.expenses.forEach((expense) => {
+      if (!isValidDateString(expense.date)) throw new Error("Ada pengeluaran tanpa tanggal valid; tutup buku dibatalkan agar data tidak hilang.");
+      const expenseYear = Number(expense.date?.slice(0, 4));
+      if (expenseYear < 2000) throw new Error("Ada pengeluaran sebelum tahun 2000; tutup buku dibatalkan agar data tidak hilang.");
+      if (Number.isInteger(expenseYear)) yearsToArchive.add(expenseYear);
+    });
+
+    for (const archiveYear of yearsToArchive) {
+      const report = this.#buildAnnualReport(data, archiveYear);
+      const existing = data.archives.find((archive) => archive.year === archiveYear);
+      if (!existing) {
+        data.archives.push(report);
+        continue;
+      }
+
+      const transactions = new Map(
+        (Array.isArray(existing.transactions) ? existing.transactions : [])
+          .map((transaction) => [`${transaction.type}:${transaction.id}`, transaction])
+      );
+      report.transactions.forEach((transaction) => {
+        const key = `${transaction.type}:${transaction.id}`;
+        if (!transactions.has(key)) transactions.set(key, transaction);
+      });
+      existing.transactions = [...transactions.values()]
+        .sort((a, b) => a.date.localeCompare(b.date) || a.type.localeCompare(b.type));
+      const income = existing.transactions
+        .filter((transaction) => transaction.type === "income")
+        .reduce((total, transaction) => total + transaction.amount, 0);
+      const expenses = existing.transactions
+        .filter((transaction) => transaction.type === "expense")
+        .reduce((total, transaction) => total + transaction.amount, 0);
+      existing.totals = { income, expenses, net: income - expenses };
+      existing.counts = {
+        income: existing.transactions.filter((transaction) => transaction.type === "income").length,
+        expenses: existing.transactions.filter((transaction) => transaction.type === "expense").length
+      };
+    }
+
+    data.payments = data.payments.filter((payment) => !isPaymentActive(payment));
+    data.expenses = [];
+    this.#writeData(data);
+    return data.archives.find((archive) => archive.year === reportYear);
   }
   deleteArchiveReport(reportId) {
     const data = this.#readData();

@@ -252,7 +252,13 @@ function unitCard(data, unit) {
     if (status.code !== "PAID") actions += `<button class="button button-primary" data-action="mark-paid" data-tenant-id="${escapeHtml(tenant.id)}" data-due-date="${escapeHtml(status.dueDate)}">Tandai lunas</button>`;
     actions += `<button class="button button-outline" data-action="edit-tenant" data-tenant-id="${escapeHtml(tenant.id)}">Edit penyewa</button>`;
     actions += `<button class="button button-outline" data-action="edit-unit" data-unit-id="${escapeHtml(unit.id)}">Edit unit</button>`;
-    actions += `<button class="button button-danger" data-action="remove-tenant" data-tenant-id="${escapeHtml(tenant.id)}">Checkout</button>`;
+    const hasPaymentHistory = data.payments.some((payment) => payment.tenantId === tenant.id) ||
+      data.archives.some((archive) => archive.transactions?.some((transaction) =>
+        transaction.type === "income" && transaction.tenantId === tenant.id
+      ));
+    actions += hasPaymentHistory
+      ? `<button class="button button-danger" data-action="remove-tenant" data-tenant-id="${escapeHtml(tenant.id)}">Checkout</button>`
+      : `<button class="button button-danger" data-action="cancel-rental" data-tenant-id="${escapeHtml(tenant.id)}">Tidak jadi menyewa</button>`;
     actions += `<button class="button button-danger" data-action="delete-unit" data-unit-id="${escapeHtml(unit.id)}">Hapus unit</button>`;
   }
   return `<article class="unit-card status-${status.code.toLowerCase().replaceAll("_", "-")}${criticalOverdue ? " status-overdue-90" : ""}">
@@ -455,7 +461,7 @@ function renderAnnual(data) {
   $("#annual-action-title").textContent = archived ? `Laporan ${year} sudah diarsipkan` : `Tutup buku tahun ${year}`;
   $("#annual-action-description").textContent = archived
     ? `Arsip dibuat ${new Intl.DateTimeFormat("id-ID", { dateStyle: "medium" }).format(new Date(archive.createdAt))}. Tanggal aplikasi tetap mengikuti mode tanggal yang dipilih.`
-    : `Tinjau dan simpan snapshot transaksi tahun ${year}. Proses ini tidak mengubah tanggal sistem atau menghapus transaksi.`;
+    : `Tutup buku akan menyimpan transaksi ke arsip per tahun dan mengosongkan seluruh ringkasan keuangan aktif. Unit dan penyewa tetap.`;
   $("#archive-year-button").classList.toggle("hidden", archived);
   $("#annual-preview").innerHTML = `<div class="annual-preview-grid">
     <div class="annual-preview-card"><span>Total pemasukan</span><strong>${formatRupiah(income)}</strong></div>
@@ -810,6 +816,22 @@ async function handleAction(button) {
         showToast(error.message);
       }
     }
+  } else if (action === "cancel-rental") {
+    const tenant = workspaceController.getAll().tenants.find((item) => item.id === button.dataset.tenantId);
+    if (tenant && await showConfirm({
+      title: "Batalkan calon penyewa?",
+      message: `Hapus data ${tenant.name} karena tidak jadi menyewa?`,
+      subtext: "Unit akan kembali kosong. Karena belum ada pembayaran, pemasukan dan transaksi dashboard tidak berubah.",
+      actionLabel: "Ya, Tidak Jadi Menyewa"
+    })) {
+      try {
+        workspaceController.cancelRental(tenant.id);
+        render();
+        showToast("Penyewaan dibatalkan. Unit dikosongkan tanpa mengubah transaksi dashboard.");
+      } catch (error) {
+        showToast(error.message || "Pembatalan penyewaan gagal.");
+      }
+    }
   } else if (action === "delete-unit") {
     const unit = workspaceController.getAll().units.find((item) => item.id === button.dataset.unitId);
     if (unit && await showConfirm({
@@ -828,14 +850,21 @@ async function handleAction(button) {
     }
   } else if (action === "archive-year") {
     const year = Number($("#annual-year").value);
+    if (!await showConfirm({
+      title: "Tutup buku dan reset dashboard?",
+      message: `Arsipkan tahun ${year}, lalu keluarkan seluruh pembayaran dan pengeluaran aktif dari dashboard dan laporan keuangan?`,
+      subtext: "Transaksi dari semua tahun akan disimpan atau digabung ke arsip per tahun sebelum dihapus dari data aktif. Unit dan penyewa tidak berubah. Tindakan ini tidak dapat dibatalkan.",
+      actionLabel: "Tutup Buku & Reset"
+    })) return;
+
     try {
-      const report = workspaceController.archiveAnnualReport(year);
+      const report = workspaceController.closeAnnualBooks(year);
       downloadArchiveReport(report);
       render();
       await showAlert({
-        title: "Laporan berhasil diarsipkan",
-        message: `Laporan tahun ${year} berhasil diarsipkan dan diunduh sebagai JSON.`,
-        subtext: `Tanggal aplikasi tetap mengikuti ${workspaceController.getAll().dateMode === "custom" ? "tanggal kustom yang dipilih" : "kalender perangkat"}. Riwayat transaksi tidak dihapus.`
+        title: "Tutup buku berhasil",
+        message: `Arsip tahun ${year} berhasil dibuat dan seluruh transaksi aktif telah dikeluarkan dari dashboard.`,
+        subtext: "Arsip transaksi per tahun tetap tersedia pada bagian Arsip laporan tahunan. Data unit dan penyewa tidak berubah."
       });
     } catch (error) {
       showToast(error.message || "Rekap tahunan gagal dibuat.");

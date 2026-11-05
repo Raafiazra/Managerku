@@ -61,6 +61,10 @@ export class WorkspaceController {
     return this.#databaseService.removeTenant(...args);
   }
 
+  cancelRental(...args) {
+    return this.#databaseService.cancelRental(...args);
+  }
+
   markPaymentPaid(...args) {
     return this.#databaseService.markPaymentPaid(...args);
   }
@@ -75,6 +79,10 @@ export class WorkspaceController {
 
   archiveAnnualReport(...args) {
     return this.#databaseService.archiveAnnualReport(...args);
+  }
+
+  closeAnnualBooks(...args) {
+    return this.#databaseService.closeAnnualBooks(...args);
   }
 
   deleteArchiveReport(...args) {
