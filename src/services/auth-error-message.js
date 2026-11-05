@@ -13,6 +13,7 @@ const authErrorMessages = {
   "auth/operation-not-allowed": "Metode Email/Password belum diaktifkan pada Firebase Authentication.",
   "auth/requires-recent-login": "Sesi sudah lama. Keluar lalu masuk kembali sebelum melakukan tindakan ini.",
   "permission-denied": "Akses Firestore ditolak. Pastikan firestore.rules sudah dipublikasikan.",
+  "firestore/permission-denied": "Akses Firestore ditolak. Pastikan firestore.rules sudah dipublikasikan dan mencakup koleksi akun.",
   "unauthenticated": "Sesi autentikasi berakhir. Silakan masuk kembali."
 };
 

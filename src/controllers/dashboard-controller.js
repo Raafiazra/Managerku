@@ -51,12 +51,15 @@ export class DashboardController {
     try {
       const legacyData = this.#databaseService.getLegacyData();
       this.#databaseService.setUserStorageScope(user.uid);
-      const cloud = await this.#firestoreService.loadUserData(user.uid);
+      const cloud = await this.#firestoreService.loadUserData(user.uid, {
+        email: user.email,
+        displayName: user.displayName
+      });
       if (generation !== this.#generation) return;
 
       let accountData = cloud.data;
       const hasLocalBusinessData = [
-        "categories", "properties", "units", "tenants", "expenses", "payments", "archives"
+        "categories", "properties", "units", "tenants", "expenses", "payments", "invoices", "archives"
       ].some((key) => legacyData[key]?.length > 0);
       if (!cloud.hasRecords && hasLocalBusinessData && await this.#confirmLocalImport()) {
         await this.#firestoreService.importUserData(user.uid, legacyData);

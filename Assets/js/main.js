@@ -3,10 +3,10 @@ import { authErrorMessage } from "../../src/services/auth-error-message.js";
 import { DashboardController } from "../../src/controllers/dashboard-controller.js";
 import { WorkspaceController } from "../../src/controllers/workspace-controller.js";
 import { firestoreService } from "../../src/services/firestore-service.js";
-import { getCurrentAppDate, isPaymentActive, localDatabaseService } from "./db.js";
+import { getCurrentAppDate, isPaymentActive, isTenantActive, localDatabaseService } from "./db.js";
 import { flushUserWrites } from "./firestore.js";
 import { formatRupiah, getBillingMessage, getBillingStatus, getOverdueReminder, getWhatsAppUrl, isSeverelyOverdue } from "./billing.js";
-import { showAlert, showConfirm, showToast } from "./dialogs.js";
+import { showAlert, showConfirm, showPrompt, showToast } from "./dialogs.js";
 import { setupPasswordToggles } from "./password-toggle.js";
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -132,7 +132,7 @@ function dataWithRelations() {
     propertyById: new Map(data.properties.map((item) => [item.id, item])),
     categoryById: new Map(data.categories.map((item) => [item.id, item])),
     unitById: new Map(data.units.map((item) => [item.id, item])),
-    tenantByUnit: new Map(data.tenants.map((item) => [item.unitId, item]))
+    tenantByUnit: new Map(data.tenants.filter(isTenantActive).map((item) => [item.unitId, item]))
   };
 }
 
@@ -163,7 +163,7 @@ function renderOnboardingAction(data) {
   const button = $("#onboarding-action");
   const propertyId = $("#dashboard-filter").value || "all";
   const availableUnits = filteredUnits(data, propertyId).filter((unit) =>
-    !data.tenants.some((tenant) => tenant.unitId === unit.id)
+    !data.tenants.some((tenant) => isTenantActive(tenant) && tenant.unitId === unit.id)
   );
   let action = "";
   let label = "";
@@ -217,7 +217,31 @@ function tenantForUnit(data, unit) {
 
 function statusForUnit(data, unit, tenant) {
   if (!tenant) return { code: "VACANT", label: "KOSONG" };
-  return getBillingStatus(tenant, data.payments.filter(isPaymentActive));
+  const completedPayments = data.payments.filter((payment) => {
+    if (!isPaymentActive(payment) || payment.tenantId !== tenant.id) return false;
+    if (!payment.invoiceId) return true;
+    return data.invoices.some((invoice) => invoice.id === payment.invoiceId && invoice.status === "PAID");
+  });
+  const paidInvoicesWithoutPayments = data.invoices
+    .filter((invoice) => invoice.tenantId === tenant.id && invoice.status === "PAID" &&
+      !completedPayments.some((payment) => payment.invoiceId === invoice.id))
+    .map((invoice) => ({ tenantId: tenant.id, dueDate: invoice.dueDate }));
+  const status = getBillingStatus(tenant, [...completedPayments, ...paidInvoicesWithoutPayments]);
+  const invoice = data.invoices.find((item) =>
+    item.tenantId === tenant.id &&
+    item.dueDate?.slice(0, 7) === status.dueDate?.slice(0, 7) &&
+    ["DRAFT", "UNPAID", "PARTIALLY_PAID", "PAID"].includes(item.status)
+  );
+  if (invoice?.status === "PARTIALLY_PAID") {
+    return {
+      ...status,
+      code: "PARTIALLY_PAID",
+      label: "DP DITERIMA",
+      paidAmount: invoice.paidAmount,
+      balanceDue: invoice.remainingAmount
+    };
+  }
+  return status;
 }
 
 function statusText(status) {
@@ -225,6 +249,7 @@ function statusText(status) {
     PAID: "LUNAS",
     DUE_SOON: "H-3",
     DUE_TODAY: "HARI INI",
+    PARTIALLY_PAID: "DP DITERIMA",
     OVERDUE_L1: "TUNGGAKAN",
     OVERDUE_CRITICAL: "KRITIS",
     UPCOMING: "BELUM JATUH TEMPO",
@@ -240,8 +265,15 @@ function unitCard(data, unit) {
   const criticalOverdue = tenant && isSeverelyOverdue(status);
   const reminder = tenant ? getOverdueReminder(status) : null;
   const tenantInfo = tenant
-    ? `<div class="unit-tenant">${escapeHtml(tenant.name)} · ${escapeHtml(tenant.whatsapp)}</div><div class="unit-meta">Jatuh tempo ${dateLabel(status.dueDate)}</div>${tenant.specialTerms ? `<div class="unit-meta">Ketentuan: ${escapeHtml(tenant.specialTerms)}</div>` : ""}${reminder ? `<div class="unit-meta">Pengingat ke-${reminder.number}${reminder.overdueDays ? ` · terlambat ${reminder.overdueDays} hari` : " · jatuh tempo hari ini"}</div>` : ""}`
+    ? `<div class="unit-tenant">${escapeHtml(tenant.name)} · ${escapeHtml(tenant.whatsapp)}</div><div class="unit-meta">Jatuh tempo ${dateLabel(status.dueDate)}</div>${status.code === "PARTIALLY_PAID" ? `<div class="unit-meta">DP diterima ${formatRupiah(status.paidAmount)} · sisa tagihan ${formatRupiah(status.balanceDue)}</div>` : ""}${tenant.specialTerms ? `<div class="unit-meta">Ketentuan: ${escapeHtml(tenant.specialTerms)}</div>` : ""}${reminder ? `<div class="unit-meta">Pengingat ke-${reminder.number}${reminder.overdueDays ? ` · terlambat ${reminder.overdueDays} hari` : " · jatuh tempo hari ini"}</div>` : ""}`
     : `<div class="unit-tenant">Belum ada penyewa</div><div class="unit-meta">Tipe ${escapeHtml(unit.type)}</div>`;
+  const currentInvoice = tenant && data.invoices.find((invoice) =>
+    invoice.tenantId === tenant.id && invoice.dueDate?.slice(0, 7) === status.dueDate?.slice(0, 7) &&
+    ["DRAFT", "UNPAID", "PARTIALLY_PAID", "PAID"].includes(invoice.status)
+  );
+  const invoicePayments = currentInvoice
+    ? data.payments.filter((payment) => payment.invoiceId === currentInvoice.id && isPaymentActive(payment))
+    : [];
   let actions = "";
   if (!tenant) {
     actions = `<button class="button button-primary" data-action="add-tenant" data-unit-id="${escapeHtml(unit.id)}">＋ Tambah penyewa</button>`;
@@ -249,22 +281,36 @@ function unitCard(data, unit) {
     actions += `<button class="button button-danger" data-action="delete-unit" data-unit-id="${escapeHtml(unit.id)}">Hapus unit</button>`;
   } else {
     actions = `<button class="button button-outline" data-action="whatsapp" data-tenant-id="${escapeHtml(tenant.id)}">Tagih via WA</button>`;
-    if (status.code !== "PAID") actions += `<button class="button button-primary" data-action="mark-paid" data-tenant-id="${escapeHtml(tenant.id)}" data-due-date="${escapeHtml(status.dueDate)}">Tandai lunas</button>`;
+    if (currentInvoice) {
+      actions += `<button class="button button-outline" data-action="view-invoice" data-invoice-id="${escapeHtml(currentInvoice.id)}">Lihat / Cetak Invoice</button>`;
+    }
+    if (status.code !== "PAID") actions += `<button class="button button-primary" data-action="record-payment" data-tenant-id="${escapeHtml(tenant.id)}" data-due-date="${escapeHtml(status.dueDate)}">Catat pembayaran</button>`;
     actions += `<button class="button button-outline" data-action="edit-tenant" data-tenant-id="${escapeHtml(tenant.id)}">Edit penyewa</button>`;
     actions += `<button class="button button-outline" data-action="edit-unit" data-unit-id="${escapeHtml(unit.id)}">Edit unit</button>`;
-    const hasPaymentHistory = data.payments.some((payment) => payment.tenantId === tenant.id) ||
+    const hasPaymentHistory = data.payments.some((payment) => payment.tenantId === tenant.id && isPaymentActive(payment)) ||
+      data.invoices.some((invoice) => invoice.tenantId === tenant.id && invoice.paidAmount > 0) ||
       data.archives.some((archive) => archive.transactions?.some((transaction) =>
         transaction.type === "income" && transaction.tenantId === tenant.id
       ));
-    actions += hasPaymentHistory
+    actions += currentInvoice?.status === "PARTIALLY_PAID"
+      ? `<span class="unit-meta">Refund DP untuk membatalkan sewa</span>`
+      : hasPaymentHistory
       ? `<button class="button button-danger" data-action="remove-tenant" data-tenant-id="${escapeHtml(tenant.id)}">Checkout</button>`
-      : `<button class="button button-danger" data-action="cancel-rental" data-tenant-id="${escapeHtml(tenant.id)}">Tidak jadi menyewa</button>`;
+      : `<button class="button button-danger" data-action="cancel-rental" data-tenant-id="${escapeHtml(tenant.id)}">Batal Sewa</button>`;
+    for (const payment of invoicePayments) {
+      const refunded = data.expenses.filter((expense) => expense.refundPaymentId === payment.id)
+        .reduce((total, expense) => total + expense.amount, 0);
+      if (payment.amount > refunded) {
+        actions += `<button class="button button-danger" data-action="refund-payment" data-payment-id="${escapeHtml(payment.id)}" data-remaining-refund="${payment.amount - refunded}">Refund ${formatRupiah(payment.amount - refunded)}</button>`;
+      }
+    }
     actions += `<button class="button button-danger" data-action="delete-unit" data-unit-id="${escapeHtml(unit.id)}">Hapus unit</button>`;
   }
   return `<article class="unit-card status-${status.code.toLowerCase().replaceAll("_", "-")}${criticalOverdue ? " status-overdue-90" : ""}">
     <div class="unit-card-top"><span class="unit-name">${escapeHtml(unit.unitName)}</span><span class="badge ${criticalOverdue ? "badge-overdue-90" : `badge-${status.code.toLowerCase().replaceAll("_", "-")}`}">${criticalOverdue ? "MENUNGGAK 3+ BULAN" : statusText(status)}</span></div>
     ${tenantInfo}
     <div class="unit-price">${formatRupiah(unit.price)} <span class="unit-meta">/ bulan</span></div>
+    ${unit.facilities?.length ? `<div class="unit-facilities" aria-label="Fasilitas">${unit.facilities.map((facility) => `<span class="facility-badge">${escapeHtml(facility)}</span>`).join("")}</div>` : ""}
     <div class="unit-actions">${actions}</div>
   </article>`;
 }
@@ -366,6 +412,16 @@ function inPeriod(date, period) {
 function renderFinance(data) {
   const filter = $("#finance-filter").value || "all";
   const period = $("#finance-period").value || "all";
+  let disclaimer = $("#finance-view [data-accounting-disclaimer]");
+  if (!disclaimer) {
+    disclaimer = document.createElement("p");
+    disclaimer.dataset.accountingDisclaimer = "";
+    disclaimer.className = "accounting-disclaimer";
+    disclaimer.setAttribute("role", "note");
+    disclaimer.textContent = "Tampilan ini merupakan alat bantu pencatatan operasional internal dan bukan merupakan laporan keuangan/pembukuan resmi yang telah diaudit oleh Akuntan Publik.";
+    $("#finance-stats").before(disclaimer);
+  }
+
   const scope = transactionScope(data, filter);
   const propertyIds = new Set(data.properties.filter((property) =>
     scope.propertyId ? property.id === scope.propertyId : scope.categoryId ? property.categoryId === scope.categoryId : true
@@ -389,7 +445,7 @@ function renderFinance(data) {
     ...payments.map((item) => ({
       ...item,
       type: "Pemasukan",
-      category: isPaymentActive(item) ? "Sewa lunas" : "Dibatalkan"
+      category: isPaymentActive(item) ? item.paymentType ?? "Sewa lunas" : "Dibatalkan"
     })),
     ...expenses.map((item) => ({ ...item, type: "Pengeluaran", category: item.category }))
   ].sort((a, b) => b.date.localeCompare(a.date));
@@ -398,8 +454,15 @@ function renderFinance(data) {
     const unitName = item.unitId ? data.unitById.get(item.unitId)?.unitName : item.unitName;
     const coverage = item.type === "Pengeluaran" ? (item.scope === "global" ? "Global" : unitName ? `${property ?? "Properti"} · ${unitName}${item.unitId ? "" : " (unit dihapus)"}` : `${property ?? "Properti"} · Properti`) : `${property ?? "Properti dihapus"}${unitName ? ` · ${unitName}${item.unitId ? "" : " (unit dihapus)"}` : ""}`;
     const isCancelled = item.type === "Pemasukan" && !isPaymentActive(item);
+    const refundedAmount = item.type === "Pemasukan"
+      ? data.expenses.filter((expense) => expense.refundPaymentId === item.id)
+        .reduce((total, expense) => total + expense.amount, 0)
+      : 0;
+    const remainingRefund = item.amount - refundedAmount;
+    const canRefund = item.type === "Pemasukan" && !isCancelled && item.tenantId &&
+      data.tenants.some((tenant) => tenant.id === item.tenantId) && remainingRefund > 0;
     const action = item.type === "Pemasukan" && !isCancelled
-      ? `<button class="button button-danger button-sm" data-action="cancel-payment" data-payment-id="${escapeHtml(item.id)}">Batalkan</button>`
+      ? `${item.invoiceId ? `<button class="button button-outline button-sm" data-action="view-invoice" data-invoice-id="${escapeHtml(item.invoiceId)}">Lihat Invoice</button>` : ""}${canRefund ? `<button class="button button-danger button-sm" data-action="refund-payment" data-payment-id="${escapeHtml(item.id)}" data-remaining-refund="${remainingRefund}">Proses Refund / Pengembalian Uang</button>` : ""}${refundedAmount ? `<div class="transaction-cancel-note">Refund tercatat: ${formatRupiah(refundedAmount)}</div>` : !item.invoiceId ? `<button class="button button-danger button-sm" data-action="cancel-payment" data-payment-id="${escapeHtml(item.id)}">Batalkan</button>` : ""}`
       : isCancelled ? `<span class="transaction-cancelled">Dibatalkan</span>` : "—";
     const sign = isCancelled ? "" : item.type === "Pemasukan" ? "+" : "−";
     return `<tr class="${isCancelled ? "transaction-row-cancelled" : ""}"><td>${dateLabel(item.date)}</td><td>${escapeHtml(item.description)}${isCancelled ? `<div class="transaction-cancel-note">Dibatalkan ${item.cancelledAt ? dateLabel(item.cancelledAt.slice(0, 10)) : ""}</div>` : ""}</td><td>${escapeHtml(coverage)}</td><td class="transaction-type">${escapeHtml(item.category)}</td><td class="${item.type === "Pemasukan" ? "amount-income" : "amount-expense"}">${sign} ${formatRupiah(item.amount)}</td><td>${action}</td></tr>`;
@@ -625,7 +688,8 @@ function openUnitModal(propertyId) {
   const fields = field("propertyId", "Properti", "select", { options: properties }) +
     field("unitName", "Nama unit (otomatis jika kosong)", "text", { required: false, placeholder: "Kamar 01 / Unit 1" }) +
     field("type", "Tipe unit", "select", { options: typeOptions }) +
-    field("price", "Harga sewa per bulan (Rp)", "number", { min: "0", step: "1000", placeholder: "Contoh: 1200000" });
+    field("price", "Harga sewa per bulan (Rp)", "number", { min: "0", step: "1000", placeholder: "Contoh: 1200000" }) +
+    field("facilities", "Fasilitas (pisahkan dengan koma)", "text", { full: true, placeholder: "AC, WiFi, Kamar mandi dalam" });
   openModal("Tambah unit", "Siapkan unit baru untuk disewakan.", fields, (values) => workspaceController.createUnit(values));
   if (propertyId) $("#field-propertyId").value = propertyId;
 }
@@ -637,9 +701,85 @@ function openEditUnitModal(unitId) {
     .map((item) => ({ value: item, label: item }));
   const fields = field("unitName", "Nama unit", "text", { value: unit.unitName }) +
     field("type", "Tipe unit", "select", { options: typeOptions }) +
-    field("price", "Harga sewa per bulan (Rp)", "number", { min: "0", step: "1000", value: unit.price });
+    field("price", "Harga sewa per bulan (Rp)", "number", { min: "0", step: "1000", value: unit.price }) +
+    field("facilities", "Fasilitas (pisahkan dengan koma)", "text", {
+      full: true,
+      value: (unit.facilities ?? []).join(", "),
+      required: false,
+      placeholder: "AC, WiFi, Kamar mandi dalam"
+    });
   openModal("Edit unit", "Perbarui nama, tipe, atau harga sewa unit.", fields, (values) => workspaceController.updateUnit(unit.id, values));
   $("#field-type").value = unit.type;
+}
+
+function openInvoicePaymentModal(tenantId, dueDate) {
+  const invoice = workspaceController.ensureInvoice(tenantId, dueDate);
+  if (invoice.status === "PAID") {
+    showToast("Invoice ini sudah lunas.");
+    return;
+  }
+  const paymentTypes = [
+    { value: "DP / Uang Muka", label: "DP / Uang Muka" },
+    { value: "Pelunasan Sewa", label: "Pelunasan Sewa" },
+    { value: "Sewa Bulanan Rutin", label: "Sewa Bulanan Rutin" }
+  ];
+  const fields = field("paymentType", "Tipe pembayaran", "select", { options: paymentTypes }) +
+    field("amount", "Nominal dibayar (Rp)", "number", {
+      min: "1",
+      step: "1",
+      value: invoice.remainingAmount
+    });
+  openModal(
+    `Catat pembayaran · ${invoice.invoiceId}`,
+    `Total ${formatRupiah(invoice.amount)} · sudah dibayar ${formatRupiah(invoice.paidAmount)} · sisa ${formatRupiah(invoice.remainingAmount)}.`,
+    fields,
+    (values) => workspaceController.recordInvoicePayment(invoice.id, values.amount, values.paymentType)
+  );
+  $("#field-paymentType").addEventListener("change", (event) => {
+    $("#field-amount").value = event.target.value === "DP / Uang Muka" ? "" : String(invoice.remainingAmount);
+  });
+  $("#field-paymentType").value = invoice.paidAmount ? "Pelunasan Sewa" : "Sewa Bulanan Rutin";
+}
+
+function openInvoicePreview(invoiceId) {
+  const data = workspaceController.getAll();
+  const invoice = data.invoices.find((item) => item.id === invoiceId);
+  if (!invoice) return showToast("Invoice tidak ditemukan.");
+  const payments = data.payments.filter((payment) => payment.invoiceId === invoice.id && isPaymentActive(payment));
+  const statusLabels = {
+    DRAFT: "Draft",
+    UNPAID: "Belum dibayar",
+    PARTIALLY_PAID: "Dibayar sebagian",
+    PAID: "Lunas",
+    REFUNDED: "Refund",
+    CANCELLED: "Dibatalkan"
+  };
+  const root = $("#modal-root");
+  root.innerHTML = `<div class="modal-backdrop"><section class="modal archive-modal" role="dialog" aria-modal="true" aria-labelledby="invoice-modal-title"><div class="modal-header"><div><h2 id="invoice-modal-title">Invoice ${escapeHtml(invoice.invoiceId)}</h2><p>${escapeHtml(invoice.propertyName)} · ${escapeHtml(invoice.unitNumber)}</p></div><button class="modal-close close-btn" type="button" aria-label="Tutup">×</button></div><div class="archive-summary"><div class="archive-summary-card"><span>Penyewa</span><strong>${escapeHtml(invoice.tenantName)}</strong></div><div class="archive-summary-card"><span>Tagihan</span><strong>${formatRupiah(invoice.amount)}</strong></div><div class="archive-summary-card"><span>Sisa tagihan</span><strong>${formatRupiah(invoice.status === "REFUNDED" || invoice.status === "CANCELLED" ? 0 : invoice.remainingAmount)}</strong></div></div><p>Jatuh tempo: ${dateLabel(invoice.dueDate)} · Status: ${statusLabels[invoice.status] ?? escapeHtml(invoice.status)}</p><p>Dibuat: ${dateLabel(invoice.createdAt?.slice(0, 10))}</p>${payments.length ? `<div class="archive-details"><table class="transaction-table"><thead><tr><th>Tanggal</th><th>Tipe pembayaran</th><th>Nominal</th></tr></thead><tbody>${payments.map((payment) => `<tr><td>${dateLabel(payment.date)}</td><td>${escapeHtml(payment.paymentType ?? "Pembayaran")}</td><td>${formatRupiah(payment.amount)}</td></tr>`).join("")}</tbody></table></div>` : ""}<div class="modal-actions"><button class="button button-outline modal-cancel" type="button">Tutup</button><button class="button button-primary" type="button" data-action="print-invoice" data-invoice-id="${escapeHtml(invoice.id)}">Cetak</button></div></section></div>`;
+  const close = () => { root.innerHTML = ""; };
+  $(".modal-close", root).addEventListener("click", close);
+  $(".modal-cancel", root).addEventListener("click", close);
+  $(".modal-backdrop", root).addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) close();
+  });
+}
+
+function printInvoice(invoiceId) {
+  const data = workspaceController.getAll();
+  const invoice = data.invoices.find((item) => item.id === invoiceId);
+  if (!invoice) return showToast("Invoice tidak ditemukan.");
+  const printWindow = window.open("", "_blank", "width=800,height=700");
+  if (!printWindow) return showToast("Izinkan pop-up untuk mencetak invoice.");
+  const statusLabels = {
+    DRAFT: "Draft",
+    UNPAID: "Belum dibayar",
+    PARTIALLY_PAID: "Dibayar sebagian",
+    PAID: "Lunas",
+    REFUNDED: "Refund",
+    CANCELLED: "Dibatalkan"
+  };
+  printWindow.document.write(`<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Invoice ${escapeHtml(invoice.invoiceId)}</title><style>body{font:16px Arial,sans-serif;max-width:760px;margin:40px auto;color:#222}header{border-bottom:2px solid #222;margin-bottom:24px}h1{font-size:24px}.row{display:flex;justify-content:space-between;border-bottom:1px solid #ddd;padding:12px 0}.total{font-weight:bold;font-size:20px}@media print{button{display:none}}</style></head><body><header><h1>INVOICE</h1><p>${escapeHtml(invoice.invoiceId)}</p></header><p><strong>Properti:</strong> ${escapeHtml(invoice.propertyName)}</p><p><strong>Unit:</strong> ${escapeHtml(invoice.unitNumber)}</p><p><strong>Penyewa:</strong> ${escapeHtml(invoice.tenantName)}</p><p><strong>Jatuh tempo:</strong> ${dateLabel(invoice.dueDate)}</p><p><strong>Status:</strong> ${statusLabels[invoice.status] ?? escapeHtml(invoice.status)}</p><div class="row"><span>Total tagihan</span><strong>${formatRupiah(invoice.amount)}</strong></div><div class="row"><span>Telah dibayar</span><strong>${formatRupiah(invoice.paidAmount)}</strong></div><div class="row total"><span>Sisa tagihan</span><strong>${formatRupiah(invoice.status === "REFUNDED" || invoice.status === "CANCELLED" ? 0 : invoice.remainingAmount)}</strong></div><button onclick="window.print()">Cetak</button></body></html>`);
+  printWindow.document.close();
 }
 
 function openTenantModal(unitId) {
@@ -647,7 +787,7 @@ function openTenantModal(unitId) {
   const unit = data.units.find((item) => item.id === unitId);
   if (unitId && !unit) return showToast("Unit tidak ditemukan.");
   const availableUnits = data.units.filter((item) =>
-    !data.tenants.some((tenant) => tenant.unitId === item.id)
+    !data.tenants.some((tenant) => isTenantActive(tenant) && tenant.unitId === item.id)
   );
   if (!unit && !availableUnits.length) return showToast("Tidak ada unit kosong untuk penyewa baru.");
   const dueDate = today();
@@ -784,6 +924,48 @@ async function handleAction(button) {
     } catch (error) {
       showToast(error.message);
     }
+  } else if (action === "record-payment") {
+    try {
+      openInvoicePaymentModal(button.dataset.tenantId, button.dataset.dueDate);
+    } catch (error) {
+      showToast(error.message || "Invoice gagal dibuat.");
+    }
+  } else if (action === "view-invoice") {
+    openInvoicePreview(button.dataset.invoiceId);
+  } else if (action === "print-invoice") {
+    printInvoice(button.dataset.invoiceId);
+  } else if (action === "refund-payment") {
+    const payment = workspaceController.getById("payments", button.dataset.paymentId);
+    const availableRefund = Number(button.dataset.remainingRefund);
+    if (!payment || !isPaymentActive(payment) || !Number.isFinite(availableRefund) || availableRefund <= 0) {
+      showToast("Pembayaran ini tidak memiliki nominal refund yang tersedia.");
+      return;
+    }
+
+    const refundAmount = await showPrompt({
+      title: "Proses refund dan batal sewa",
+      message: `Masukkan nominal yang dikembalikan untuk "${payment.description}".`,
+      subtext: `Maksimal ${formatRupiah(availableRefund)}. Pemasukan awal tetap tercatat; refund menjadi pengeluaran dan kamar dikosongkan.`,
+      actionLabel: "Proses Refund",
+      defaultValue: String(availableRefund),
+      inputLabel: "Nominal refund dalam Rupiah",
+      required: true
+    });
+    if (refundAmount === null) return;
+    if (!await showConfirm({
+      title: "Konfirmasi refund dan batal sewa",
+      message: `Catat pengeluaran refund sebesar ${formatRupiah(refundAmount)} untuk "${payment.description}"?`,
+      subtext: "Pemasukan awal akan dipertahankan, penyewa dibatalkan, dan kamar dikosongkan.",
+      actionLabel: "Ya, Proses Refund"
+    })) return;
+
+    try {
+      const result = workspaceController.refundPayment(payment.id, refundAmount);
+      render();
+      showToast(`Refund ${formatRupiah(result.expense.amount)} dicatat sebagai pengeluaran. Pemasukan awal tetap tersimpan; sewa dibatalkan dan kamar dikosongkan.`);
+    } catch (error) {
+      showToast(error.message || "Refund gagal diproses.");
+    }
   } else if (action === "cancel-payment") {
     const payment = workspaceController.getById("payments", button.dataset.paymentId);
     if (payment && isPaymentActive(payment) && await showConfirm({
@@ -820,14 +1002,14 @@ async function handleAction(button) {
     const tenant = workspaceController.getAll().tenants.find((item) => item.id === button.dataset.tenantId);
     if (tenant && await showConfirm({
       title: "Batalkan calon penyewa?",
-      message: `Hapus data ${tenant.name} karena tidak jadi menyewa?`,
-      subtext: "Unit akan kembali kosong. Karena belum ada pembayaran, pemasukan dan transaksi dashboard tidak berubah.",
-      actionLabel: "Ya, Tidak Jadi Menyewa"
+      message: `Batalkan sewa ${tenant.name}?`,
+      subtext: "Invoice yang belum dibayar akan ditandai batal. Kamar dikosongkan tanpa membuat pengeluaran refund.",
+      actionLabel: "Ya, Batalkan Sewa"
     })) {
       try {
         workspaceController.cancelRental(tenant.id);
         render();
-        showToast("Penyewaan dibatalkan. Unit dikosongkan tanpa mengubah transaksi dashboard.");
+        showToast("Sewa dan invoice yang belum dibayar dibatalkan. Unit dikosongkan tanpa pengeluaran refund.");
       } catch (error) {
         showToast(error.message || "Pembatalan penyewaan gagal.");
       }

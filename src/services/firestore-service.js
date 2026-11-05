@@ -3,6 +3,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  setDoc,
   writeBatch
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { collectionModels } from "../models/WorkspaceEntities.js";
@@ -17,6 +18,7 @@ const emptyData = () => ({
   tenants: [],
   expenses: [],
   payments: [],
+  invoices: [],
   archives: [],
   dateMode: "device",
   customDate: null,
@@ -90,9 +92,21 @@ export class FirestoreService {
     }
   }
 
-  async loadUserData(uid) {
+  async loadUserData(uid, profile = {}) {
     const data = emptyData();
     let hasRecords = false;
+    const profileReference = doc(this.#firestore, "users", uid);
+    const profileSnapshot = await getDoc(profileReference);
+    if (!profileSnapshot.exists()) {
+      const defaultProfile = {
+        uid,
+        email: profile.email ?? null,
+        displayName: profile.displayName ?? null,
+        createdAt: new Date().toISOString()
+      };
+      await setDoc(profileReference, defaultProfile, { merge: true });
+    }
+
     const snapshots = await Promise.all(recordCollections.map((name) => getDocs(this.#recordsPath(uid, name))));
 
     snapshots.forEach((snapshot, index) => {

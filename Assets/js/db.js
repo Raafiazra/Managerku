@@ -4,6 +4,7 @@ const makeId = () => globalThis.crypto?.randomUUID?.() ??
   `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 export const isPaymentActive = (payment) => payment.status !== "CANCELLED";
+export const isTenantActive = (tenant) => tenant.status !== "CANCELLED";
 
 function deviceDateString() {
   const now = new Date();
@@ -30,6 +31,7 @@ const emptyData = () => ({
   tenants: [],
   expenses: [],
   payments: [],
+  invoices: [],
   archives: [],
   dateMode: "device",
   customDate: null,
@@ -242,6 +244,11 @@ export class LocalDatabaseService {
       unitName,
       type: ["Reguler", "Medium", "Large", "VIP"].includes(input.type) ? input.type : "Reguler",
       price: validateAmount(input.price, "Harga sewa"),
+      facilities: [...new Set(
+        (Array.isArray(input.facilities) ? input.facilities : String(input.facilities ?? "").split(","))
+          .map((item) => String(item).trim())
+          .filter(Boolean)
+      )],
       status: "VACANT"
     };
     this.#writeData({ ...data, units: [...data.units, record] });
@@ -261,6 +268,11 @@ export class LocalDatabaseService {
     unit.unitName = unitName;
     unit.type = validateText(input.type, "Tipe unit");
     unit.price = validateAmount(input.price, "Harga sewa");
+    unit.facilities = [...new Set(
+      (Array.isArray(input.facilities) ? input.facilities : String(input.facilities ?? "").split(","))
+        .map((item) => String(item).trim())
+        .filter(Boolean)
+    )];
     this.#writeData(data);
     return unit;
   }
@@ -277,7 +289,7 @@ export class LocalDatabaseService {
     const data = this.#readData();
     const unit = data.units.find((item) => item.id === input.unitId);
     if (!unit) throw new Error("Unit tidak ditemukan.");
-    if (data.tenants.some((item) => item.unitId === input.unitId)) throw new Error("Unit ini masih memiliki penyewa aktif.");
+    if (data.tenants.some((item) => isTenantActive(item) && item.unitId === input.unitId)) throw new Error("Unit ini masih memiliki penyewa aktif.");
     if (!input.startDate || !input.dueDate) throw new Error("Tanggal masuk dan jatuh tempo wajib diisi.");
     const record = {
       id: makeId(),
@@ -285,17 +297,64 @@ export class LocalDatabaseService {
       name: validateText(input.name, "Nama penyewa"),
       whatsapp: validateText(input.whatsapp, "Nomor WhatsApp"),
       startDate: input.startDate,
-      dueDate: input.dueDate
+      dueDate: input.dueDate,
+      status: "ACTIVE"
     };
     unit.status = "OCCUPIED";
     data.tenants.push(record);
+    this.#createInvoiceRecord(data, record, unit, record.dueDate);
     this.#writeData(data);
     return record;
+  }
+  #createInvoiceRecord(data, tenant, unit, dueDate) {
+    const validDueDate = validateDate(dueDate, "Tanggal jatuh tempo invoice");
+    const propertyName = data.properties.find((item) => item.id === unit.propertyId)?.name ?? "Properti";
+    const monthKey = this.getCurrentAppDate().slice(0, 7).replace("-", "");
+    const sequence = data.invoices.reduce((maximum, invoice) => {
+      const match = invoice.invoiceId?.match(new RegExp(`^INV/${monthKey}/(\\d+)$`));
+      return match ? Math.max(maximum, Number(match[1])) : maximum;
+    }, 0) + 1;
+    const amount = validateAmount(unit.price, "Nominal invoice");
+    if (!Number.isSafeInteger(amount)) throw new Error("Nominal invoice harus berupa bilangan Rupiah bulat yang aman.");
+    const invoice = {
+      id: makeId(),
+      invoiceId: `INV/${monthKey}/${String(sequence).padStart(3, "0")}`,
+      tenantId: tenant.id,
+      tenantName: tenant.name,
+      unitNumber: unit.unitName,
+      propertyId: unit.propertyId,
+      propertyName,
+      amount,
+      paidAmount: 0,
+      remainingAmount: amount,
+      dueDate: validDueDate,
+      status: "UNPAID",
+      createdAt: new Date().toISOString()
+    };
+    data.invoices.push(invoice);
+    return invoice;
+  }
+  ensureInvoice(tenantId, dueDate) {
+    const data = this.#readData();
+    const tenant = data.tenants.find((item) => item.id === tenantId);
+    if (!tenant || !isTenantActive(tenant)) throw new Error("Penyewa aktif tidak ditemukan.");
+    const existing = data.invoices.find((invoice) =>
+      invoice.tenantId === tenantId &&
+      invoice.dueDate?.slice(0, 7) === dueDate?.slice(0, 7) &&
+      invoice.status !== "CANCELLED"
+    );
+    if (existing) return existing;
+    const unit = data.units.find((item) => item.id === tenant.unitId);
+    if (!unit) throw new Error("Unit penyewa tidak ditemukan.");
+    const invoice = this.#createInvoiceRecord(data, tenant, unit, dueDate);
+    this.#writeData(data);
+    return invoice;
   }
   updateTenant(tenantId, input) {
     const data = this.#readData();
     const tenant = data.tenants.find((item) => item.id === tenantId);
     if (!tenant) throw new Error("Data penyewa tidak ditemukan.");
+    if (!isTenantActive(tenant)) throw new Error("Data penyewa sudah dibatalkan dan tidak dapat diedit.");
     tenant.name = validateText(input.name, "Nama penyewa");
     tenant.whatsapp = validateText(input.whatsapp, "Nomor WhatsApp");
     tenant.dueDate = validateDate(input.dueDate, "Tanggal jatuh tempo");
@@ -304,25 +363,51 @@ export class LocalDatabaseService {
     return tenant;
   }
   markPaymentPaid(tenantId, dueDate) {
+    const invoice = this.ensureInvoice(tenantId, dueDate);
+    if (invoice.status === "PAID") {
+      return this.#readData().payments.find((payment) => payment.invoiceId === invoice.id) ?? invoice;
+    }
+    return this.recordInvoicePayment(invoice.id, invoice.remainingAmount, invoice.paidAmount ? "Pelunasan Sewa" : "Sewa Bulanan Rutin");
+  }
+  recordInvoicePayment(invoiceId, amount, paymentType) {
     const data = this.#readData();
-    const tenant = data.tenants.find((item) => item.id === tenantId);
-    if (!tenant) throw new Error("Data penyewa tidak ditemukan.");
-    const unit = data.units.find((item) => item.id === tenant.unitId);
-    if (!unit) throw new Error("Unit penyewa tidak ditemukan.");
-    const existing = data.payments.find((item) =>
-      isPaymentActive(item) && item.tenantId === tenantId && item.dueDate?.slice(0, 7) === dueDate.slice(0, 7)
-    );
-    if (existing) return existing;
+    const invoice = data.invoices.find((item) => item.id === invoiceId);
+    if (!invoice || !["UNPAID", "PARTIALLY_PAID"].includes(invoice.status)) {
+      throw new Error("Invoice belum dibayar tidak ditemukan.");
+    }
+    if (!["DP / Uang Muka", "Pelunasan Sewa", "Sewa Bulanan Rutin"].includes(paymentType)) {
+      throw new Error("Pilih tipe pembayaran yang valid.");
+    }
+    const value = validateAmount(amount, "Nominal pembayaran");
+    if (!Number.isSafeInteger(value)) throw new Error("Nominal pembayaran harus berupa bilangan Rupiah bulat yang aman.");
+    if (value <= 0 || value > invoice.remainingAmount) {
+      throw new Error(`Nominal pembayaran harus lebih dari nol dan tidak melebihi sisa tagihan ${invoice.remainingAmount}.`);
+    }
+    if (paymentType === "DP / Uang Muka" && value >= invoice.remainingAmount) {
+      throw new Error("Nominal DP harus lebih kecil dari sisa tagihan; gunakan Pelunasan Sewa untuk melunasi seluruh tagihan.");
+    }
+    if (paymentType !== "DP / Uang Muka" && value !== invoice.remainingAmount) {
+      throw new Error("Pelunasan dan sewa bulanan rutin harus membayar seluruh sisa tagihan.");
+    }
+    const tenant = data.tenants.find((item) => item.id === invoice.tenantId);
+    const unit = data.units.find((item) => item.id === (tenant?.unitId ?? null)) ??
+      data.units.find((item) => item.unitName === invoice.unitNumber && item.propertyId === invoice.propertyId);
     const payment = {
       id: makeId(),
-      tenantId,
-      unitId: unit.id,
-      propertyId: unit.propertyId,
-      dueDate,
-      amount: unit.price,
+      invoiceId: invoice.id,
+      tenantId: invoice.tenantId,
+      unitId: unit?.id ?? null,
+      propertyId: invoice.propertyId,
+      dueDate: invoice.dueDate,
+      amount: value,
+      paymentType,
       date: this.getCurrentAppDate(),
-      description: `Sewa ${unit.unitName} - ${tenant.name}`
+      description: `${paymentType} ${invoice.unitNumber} - ${invoice.tenantName}`
     };
+    invoice.paidAmount += value;
+    invoice.remainingAmount = invoice.amount - invoice.paidAmount;
+    invoice.status = invoice.remainingAmount === 0 ? "PAID" : "PARTIALLY_PAID";
+    invoice.updatedAt = new Date().toISOString();
     data.payments.push(payment);
     this.#writeData(data);
     return payment;
@@ -332,6 +417,9 @@ export class LocalDatabaseService {
     const payment = data.payments.find((item) => item.id === paymentId);
     if (!payment) throw new Error("Transaksi pembayaran tidak ditemukan.");
     if (!isPaymentActive(payment)) throw new Error("Transaksi pembayaran ini sudah dibatalkan.");
+    if (data.expenses.some((expense) => expense.refundPaymentId === paymentId)) {
+      throw new Error("Pembayaran yang sudah memiliki refund tidak dapat dibatalkan; pertahankan pemasukan dan koreksi melalui refund.");
+    }
 
     const paymentYear = Number(payment.date?.slice(0, 4));
     if (data.archives.some((archive) =>
@@ -348,8 +436,75 @@ export class LocalDatabaseService {
       cancellationNote: "Dibatalkan oleh pengelola"
     };
     data.payments = data.payments.map((item) => item.id === paymentId ? cancelledPayment : item);
+    if (payment.invoiceId) {
+      const invoice = data.invoices.find((item) => item.id === payment.invoiceId);
+      if (invoice && invoice.status !== "REFUNDED") {
+        invoice.paidAmount = Math.max(0, invoice.paidAmount - payment.amount);
+        invoice.remainingAmount = invoice.amount - invoice.paidAmount;
+        invoice.status = invoice.paidAmount === 0 ? "UNPAID" : "PARTIALLY_PAID";
+        invoice.updatedAt = new Date().toISOString();
+      }
+    }
     this.#writeData(data);
     return cancelledPayment;
+  }
+  refundPayment(paymentId, refundAmount) {
+    const data = this.#readData();
+    const payment = data.payments.find((item) => item.id === paymentId);
+    if (!payment || !isPaymentActive(payment)) throw new Error("Pembayaran aktif tidak ditemukan.");
+    const tenant = data.tenants.find((item) => item.id === payment.tenantId);
+    if (!tenant) throw new Error("Data penyewa untuk pembayaran ini tidak ditemukan.");
+
+    const existingRefunds = data.expenses.filter((expense) => expense.refundPaymentId === paymentId);
+    const alreadyRefunded = existingRefunds.reduce((total, expense) => total + expense.amount, 0);
+    const availableRefund = payment.amount - alreadyRefunded;
+    const value = validateAmount(refundAmount, "Nominal refund");
+    if (value <= 0) throw new Error("Nominal refund harus lebih besar dari nol.");
+    if (value > availableRefund) {
+      throw new Error(`Nominal refund melebihi sisa yang dapat dikembalikan (${availableRefund}).`);
+    }
+
+    const unit = data.units.find((item) => item.id === payment.unitId || item.id === tenant.unitId);
+    const propertyId = payment.propertyId ?? unit?.propertyId ?? null;
+    const scope = unit && propertyId ? "unit" : propertyId ? "property" : "global";
+    const expense = {
+      id: makeId(),
+      propertyId,
+      unitId: scope === "unit" ? unit.id : null,
+      scope,
+      category: "Pengembalian Uang / Refund",
+      amount: value,
+      description: `Pengembalian uang sewa/DP an. ${tenant.name} - Batal Sewa`,
+      date: this.getCurrentAppDate(),
+      refundPaymentId: paymentId,
+      tenantId: tenant.id
+    };
+
+    const cancelsActiveTenancy = isTenantActive(tenant);
+    data.expenses.push(expense);
+    const invoice = data.invoices.find((item) => item.id === payment.invoiceId);
+    if (invoice) {
+      invoice.status = "REFUNDED";
+      invoice.refundedAmount = (invoice.refundedAmount ?? 0) + value;
+      invoice.remainingAmount = 0;
+      invoice.updatedAt = new Date().toISOString();
+    }
+    if (cancelsActiveTenancy) {
+      tenant.status = "CANCELLED";
+      tenant.cancelledAt = new Date().toISOString();
+      tenant.cancellationReason = "Batal sewa dan refund";
+      if (unit) unit.status = "VACANT";
+      data.invoices = data.invoices.map((item) => item.tenantId === tenant.id && item.id !== invoice?.id &&
+        ["DRAFT", "UNPAID"].includes(item.status)
+        ? { ...item, status: "CANCELLED", updatedAt: new Date().toISOString() }
+        : item);
+    }
+    this.#writeData(data);
+    return {
+      expense,
+      refundedTotal: alreadyRefunded + value,
+      remainingRefund: availableRefund - value
+    };
   }
   createExpense(input) {
     const data = this.#readData();
@@ -379,6 +534,11 @@ export class LocalDatabaseService {
     const data = this.#readData();
     const tenant = data.tenants.find((item) => item.id === tenantId);
     if (!tenant) throw new Error("Data penyewa tidak ditemukan.");
+    if (data.invoices.some((invoice) => invoice.tenantId === tenantId &&
+      invoice.status === "PARTIALLY_PAID" && (invoice.refundedAmount ?? 0) < invoice.paidAmount
+    )) {
+      throw new Error("Selesaikan refund invoice yang dibayar sebagian sebelum checkout.");
+    }
     data.payments = data.payments.map((payment) =>
       payment.tenantId === tenantId ? { ...payment, tenantId: null } : payment
     );
@@ -391,7 +551,9 @@ export class LocalDatabaseService {
     const data = this.#readData();
     const tenant = data.tenants.find((item) => item.id === tenantId);
     if (!tenant) throw new Error("Data penyewa tidak ditemukan.");
-    const hasPaymentHistory = data.payments.some((payment) => payment.tenantId === tenantId) ||
+    const hasPaymentHistory = data.payments.some((payment) =>
+      payment.tenantId === tenantId && isPaymentActive(payment)
+    ) || data.invoices.some((invoice) => invoice.tenantId === tenantId && invoice.paidAmount > 0) ||
       data.archives.some((archive) => archive.transactions?.some((transaction) =>
         transaction.type === "income" && transaction.tenantId === tenantId
       ));
@@ -399,6 +561,10 @@ export class LocalDatabaseService {
       throw new Error("Penyewa ini sudah memiliki riwayat pembayaran. Gunakan Checkout agar riwayat tetap tersimpan.");
     }
 
+    data.invoices = data.invoices.map((invoice) => invoice.tenantId === tenantId &&
+      ["DRAFT", "UNPAID", "PARTIALLY_PAID"].includes(invoice.status)
+      ? { ...invoice, status: "CANCELLED", updatedAt: new Date().toISOString() }
+      : invoice);
     data.tenants = data.tenants.filter((item) => item.id !== tenantId);
     const unit = data.units.find((item) => item.id === tenant.unitId);
     if (unit) unit.status = "VACANT";

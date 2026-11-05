@@ -15,3 +15,9 @@ test("unknown auth errors retain their explicit message", () => {
   assert.equal(authErrorMessage({ message: "Firebase unavailable" }), "Firebase unavailable");
   assert.equal(authErrorMessage({}), "Autentikasi gagal. Silakan coba lagi.");
 });
+
+test("Firestore permission errors provide actionable guidance", () => {
+  const expected = "Akses Firestore ditolak. Pastikan firestore.rules sudah dipublikasikan.";
+  assert.equal(authErrorMessage({ code: "permission-denied" }), expected);
+  assert.match(authErrorMessage({ code: "firestore/permission-denied" }), /sudah dipublikasikan/);
+});

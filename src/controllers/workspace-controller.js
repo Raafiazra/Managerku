@@ -69,8 +69,20 @@ export class WorkspaceController {
     return this.#databaseService.markPaymentPaid(...args);
   }
 
+  ensureInvoice(...args) {
+    return this.#databaseService.ensureInvoice(...args);
+  }
+
+  recordInvoicePayment(...args) {
+    return this.#databaseService.recordInvoicePayment(...args);
+  }
+
   cancelPayment(...args) {
     return this.#databaseService.cancelPayment(...args);
+  }
+
+  refundPayment(...args) {
+    return this.#databaseService.refundPayment(...args);
   }
 
   createExpense(...args) {
