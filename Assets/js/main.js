@@ -68,6 +68,16 @@ function setAuthStatus(message, { retry = false, busy = false } = {}) {
   $$("[data-auth-tab]").forEach((tab) => { tab.disabled = busy; });
 }
 
+document.addEventListener("DOMContentLoaded", () => {
+  $$("[data-auth-tab]").forEach((tab) => {
+    tab.addEventListener("click", (event) => {
+      event.preventDefault();
+      setAuthTab(tab.dataset.authTab);
+      setAuthStatus("");
+    });
+  });
+});
+
 const dashboardController = new DashboardController({
   authService,
   databaseService: localDatabaseService,
@@ -936,13 +946,6 @@ $("#app-date-picker").addEventListener("change", (event) => {
     showToast(error.message || "Tanggal kustom tidak valid.");
     render();
   }
-});
-
-$$("[data-auth-tab]").forEach((tab) => {
-  tab.addEventListener("click", () => {
-    setAuthTab(tab.dataset.authTab);
-    setAuthStatus("");
-  });
 });
 
 $("#forgot-password-link").addEventListener("click", (event) => {
